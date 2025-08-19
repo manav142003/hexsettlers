@@ -40,7 +40,7 @@ const DevCardMenu = ({ onComplete, devCards, devCardActions }) => {
 
         {menu === "main" ? (
           <div>
-            <button className={hoverClass} disabled={!devCardActions?.allowed} onClick={() => purchaseCard()}>
+            <button title={devCardActions.description} className={hoverClass} disabled={!devCardActions?.allowed} onClick={() => purchaseCard()}>
               Purchase Card
             </button>
             <button disabled={!hasPlayableDevCard(devCards)} onClick={() => setMenu("devCards")}>

@@ -4,13 +4,14 @@ import { playerColourMap } from "../context/PlayerColourContext";
 import { hoverTextMap } from "../utils/colours";
 import { useSocket } from "../context/WebSocketContext";
 
-function ActionMenuButton({ icon, onClick, disabled = false }) {
+function ActionMenuButton({ icon, onClick, disabled = false, title }) {
   const { id } = useSocket();
   const colourMap = playerColourMap();
   const playerColour = colourMap[id];
-  const hoverClass = disabled ? "opacity-30 cursor-default pointer-events-none" : hoverTextMap[playerColour] || "hover:text-gray-400";
+  const hoverClass = disabled ? "opacity-30 cursor-default" : hoverTextMap[playerColour] || "hover:text-gray-400";
   return (
     <button
+      title={title}
       onClick={onClick}
       disabled={disabled}
       className={`flex items-center justify-center rounded-md p-2

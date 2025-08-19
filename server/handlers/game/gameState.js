@@ -210,6 +210,7 @@ function promptRobberPlacement(uuid) {
   gameState.action = "robber";
   broadcastGameState(gameState);
   const validRobberPlacements = getValidRobberPlacements(uuid);
+  broadcastToPlayer(uuid, { type: "promptMessage", message: "Please move the robber" });
   broadcastToPlayer(uuid, { type: "placeRobberPrompt", validRobberPlacements });
 }
 
@@ -660,10 +661,10 @@ function getPossibleActions(uuid) {
       //second check: they must have somewhere to put the settlement
       if (canAfford(player, { wood: 1, brick: 1, wheat: 1, sheep: 1 })) {
         //third check: they must be able to afford the settlement
-        actions.placeSettlement = { allowed: true };
-      } else actions.placeSettlement = { allowed: false, reason: "insufficientResources" };
-    } else actions.placeSettlement = { allowed: false, reason: "noValidSpots" };
-  } else actions.placeSettlement = { allowed: false, reason: "maxSettlements" };
+        actions.placeSettlement = { allowed: true, description: "Place a settlement" };
+      } else actions.placeSettlement = { allowed: false, description: "Insufficient resources" };
+    } else actions.placeSettlement = { allowed: false, description: "No valid settlement spots" };
+  } else actions.placeSettlement = { allowed: false, description: "Max settlements reached (5)" };
 
   //check if player can place road
   if (player.roads.length < 15) {
@@ -672,10 +673,10 @@ function getPossibleActions(uuid) {
       //second check: they must have somewhere to build the road
       if (canAfford(player, { wood: 1, brick: 1 })) {
         //third check: they must be able to afford the road
-        actions.placeRoad = { allowed: true };
-      } else actions.placeRoad = { allowed: false, reason: "insufficientResources" };
-    } else actions.placeRoad = { allowed: false, reason: "noValidSpots" };
-  } else actions.placeRoad = { allowed: false, reason: "maxRoads" };
+        actions.placeRoad = { allowed: true, description: "Place a road" };
+      } else actions.placeRoad = { allowed: false, description: "Insufficient resources" };
+    } else actions.placeRoad = { allowed: false, description: "No valid road spots" };
+  } else actions.placeRoad = { allowed: false, description: "Max roads reached (15)" };
 
   //check if player can place a city
   if (player.cities.length < 4) {
@@ -684,27 +685,27 @@ function getPossibleActions(uuid) {
       //second check: they must have an upgradable settlement on the board
       if (canAfford(player, { ore: 3, wheat: 2 })) {
         //third check: they must be able to afford the city
-        actions.placeCity = { allowed: true };
-      } else actions.placeCity = { allowed: false, reason: "insufficientResources" };
-    } else actions.placeCity = { allowed: false, reason: "noSettlements" };
-  } else actions.placeCity = { allowed: false, reason: "maxCities" };
+        actions.placeCity = { allowed: true, description: "Place a city" };
+      } else actions.placeCity = { allowed: false, description: "Insufficient resources" };
+    } else actions.placeCity = { allowed: false, description: "No valid city spots" };
+  } else actions.placeCity = { allowed: false, description: "Max cities reached (4)" };
 
   //check if player can afford a development card
   if (gameState.devCards.length > 0) {
     //first check: confirm that there are development cards in the deck
     if (canAfford(player, { wheat: 1, ore: 1, sheep: 1 })) {
       //second check: confirm that they can afford the development card
-      actions.buyDevCard = { allowed: true };
-    } else actions.buyDevCard = { allowed: false, reason: "insufficientResources" };
-  } else actions.buyDevCard = { allowed: false, reason: "noDevCardsLeft" };
+      actions.buyDevCard = { allowed: true, description: "Purchase a development card" };
+    } else actions.buyDevCard = { allowed: false, description: "Insufficient resources" };
+  } else actions.buyDevCard = { allowed: false, description: "No development cards remaining in deck" };
 
   //check if player can trade (as long as the player has at least one resource, they can trade it)
   const hasResources = Object.values(player.resources).some((amount) => amount > 0);
-  actions.trade = hasResources ? { allowed: true } : { allowed: false, reason: "noResources" };
+  actions.trade = hasResources ? { allowed: true, description: "Propose a trade" } : { allowed: false, description: "You have no resources to trade" };
 
   //check if player can exchange with the bank (based on amount of their resources and which ports they're on)
   const bankOptions = getBankTradeOptions(uuid);
-  actions.bank = bankOptions.length > 0 ? { allowed: true, options: bankOptions } : { allowed: false, reason: "noOptions" };
+  actions.bank = bankOptions.length > 0 ? { allowed: true, options: bankOptions, description: "Exchange with the bank" } : { allowed: false, description: "You have no options to trade" };
   return actions;
 }
 
@@ -828,6 +829,7 @@ function promptSettlementPlacement(data, uuid) {
   if (uuid != gameState.turnOrder[gameState.turn]) return;
   gameState.action = "settlement";
   const validSettlements = getValidSettlementPlacements(gameState, uuid);
+  broadcastToPlayer(uuid, { type: "promptMessage", message: "Please place a settlement" });
   broadcastToPlayer(uuid, { type: "settlementPrompt", validSettlements });
   broadcastGameState(gameState);
 }
@@ -859,6 +861,7 @@ function promptCityPlacement(data, uuid) {
   const { gameState, player, pin } = getContext(uuid);
   gameState.action = "city";
   const validCities = player.settlements;
+  broadcastToPlayer(uuid, { type: "promptMessage", message: "Please place a city" });
   broadcastToPlayer(uuid, { type: "cityPrompt", validCities });
   broadcastGameState(gameState);
 }
@@ -985,6 +988,7 @@ function promptRoadPlacement(data, uuid, location) {
   const { gameState, pin } = getContext(uuid);
   gameState.action = "road";
   const validRoads = getValidRoadPlacements(gameState, uuid, location);
+  broadcastToPlayer(uuid, { type: "promptMessage", message: "Please place a road" });
   broadcastToPlayer(uuid, { type: "roadPrompt", validRoads });
   broadcastGameState(gameState);
 }

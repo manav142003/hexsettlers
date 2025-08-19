@@ -1,6 +1,6 @@
 import { useSocket } from "../context/WebSocketContext";
 import { colourPalette, panelBgClasses } from "../utils/colours";
-import { textColourMap } from "../utils/colours";
+import { textColourMap, borderColourMap } from "../utils/colours";
 
 var playerColour = "gray";
 
@@ -11,7 +11,7 @@ function PlayerInfoPanel({ playerId, player, currentPlayerId, isYou, turnOrder, 
   //if it's currently this player's turn, their border will be thicker
   const isCurrentPlayer = playerId === currentPlayerId;
   const borderThickness = isCurrentPlayer ? "border-6" : "border-6";
-  const borderColourClass = "border-gray-300";
+  const borderColourClass = isCurrentPlayer ? borderColourMap[playerColour] : "border-gray-300";
   const bgClass = panelBgClasses[playerColour];
 
   return isYou ? (

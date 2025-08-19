@@ -16,7 +16,6 @@ button {
 button:disabled {
   opacity: 30;
   cursor: default;
-  pointer-events: none;
   color: gray;
 }
 

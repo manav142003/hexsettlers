@@ -42,14 +42,14 @@ const ActionMenu = ({ isYourTurn, action, phase, devCards, resources }) => {
     <div className="border-6 bg-gray-200 border-gray-300 rounded-lg p-4  w-full">
       {menuMode === "mainMenu" && (
         <div className="grid grid-cols-4 gap-5 xl:grid-cols-2 w-full h-full">
-          <ActionMenuButton icon={faHouse} disabled={isDisabled("placeSettlement")} onClick={() => send({ type: "requestSettlementPrompt" })} />
-          <ActionMenuButton icon={faRoad} disabled={isDisabled("placeRoad")} onClick={() => send({ type: "requestRoadPrompt" })} />
-          <ActionMenuButton icon={faCity} disabled={isDisabled("placeCity")} onClick={() => send({ type: "requestCityPrompt" })} />
-          <ActionMenuButton icon={faRectangleList} disabled={!(isYourTurn && action !== "roll" && action !== "robber")} onClick={() => setDevCardMenu(true)} />
-          <ActionMenuButton icon={faArrowRightArrowLeft} disabled={isDisabled("trade")} onClick={() => setTradeMenu(true)} />
-          <ActionMenuButton icon={faBuildingColumns} disabled={isDisabled("bank")} onClick={() => setBankMenu(true)} />
-          <ActionMenuButton icon={faForwardStep} disabled={!(isYourTurn && action !== "roll" && action !== "robber") || phase === "setup"} onClick={handleEndTurn} />
-          <ActionMenuButton icon={faComments} onClick={() => setMenuMode("messages")} />
+          <ActionMenuButton title={actions.placeSettlement?.description} icon={faHouse} disabled={isDisabled("placeSettlement")} onClick={() => send({ type: "requestSettlementPrompt" })} />
+          <ActionMenuButton title={actions.placeRoad?.description} icon={faRoad} disabled={isDisabled("placeRoad")} onClick={() => send({ type: "requestRoadPrompt" })} />
+          <ActionMenuButton title={actions.placeCity?.description} icon={faCity} disabled={isDisabled("placeCity")} onClick={() => send({ type: "requestCityPrompt" })} />
+          <ActionMenuButton title={"Play or purchase a development card"} icon={faRectangleList} disabled={!(isYourTurn && action !== "roll" && action !== "robber")} onClick={() => setDevCardMenu(true)} />
+          <ActionMenuButton title={actions.trade?.description} icon={faArrowRightArrowLeft} disabled={isDisabled("trade")} onClick={() => setTradeMenu(true)} />
+          <ActionMenuButton title={actions.bank?.description} icon={faBuildingColumns} disabled={isDisabled("bank")} onClick={() => setBankMenu(true)} />
+          <ActionMenuButton title={"End your turn"} icon={faForwardStep} disabled={!(isYourTurn && action !== "roll" && action !== "robber") || phase === "setup"} onClick={handleEndTurn} />
+          <ActionMenuButton title={"View server log"} icon={faComments} onClick={() => setMenuMode("messages")} />
         </div>
       )}
 
