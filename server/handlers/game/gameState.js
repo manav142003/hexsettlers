@@ -1,0 +1,1192 @@
+const { rooms, users, playerToRoom } = require("../../store");
+const { broadcastToRoom, broadcastToPlayer } = require("../../utils/broadcast");
+const { vertexToTiles, tileToVertices, adjacentVertices, roadSpots } = require("../../data/gameHelpers");
+
+function createGameState(room) {
+  const turnOrder = shuffle([...room.players]);
+  return {
+    gameStarted: false, //indicates whether or not the game has started
+    turn: 0, //specifies whose turn it currently is (each player has an id of 0, 1, 2, or 3)
+    turnOrder, //order in which players take turns (randomized)
+    placementStep: 0, //helps track whose turn it is to place their initial settlements
+    takenVertices: [], //all vertices/settlement spots that have been claimed
+    takenEdges: [], //all road edges that have been claimed
+    board: generateBoard(), //this is the gameboard (hex tiles, docks, etc.) all set up and randomized
+    phase: "setup", //phase of the game (setup, playing, end)
+    action: "settlement", //current action that the player is taking
+    devCards: generateDevCards(), //holds the deck of all dev cards available for purchase
+    bank: { wood: 19, brick: 19, wheat: 19, sheep: 19, ore: 19 }, //bank that players can trade resources in
+    robber: { discardCount: 0 }, //tracks which player(s) still need to discard in robber phase
+    longestRoad: null, //holds the player with the longest road
+    largestArmy: null, //holds the player with the largest army
+
+    players: Object.fromEntries(
+      turnOrder.map((id) => [
+        id,
+        {
+          username: users[id]?.username, //player's name
+          resources: { wood: 0, brick: 0, wheat: 2, sheep: 2, ore: 2 }, //player's resources
+          devCards: [], //player's development cards
+          roads: [], //player's roads
+          settlements: [], //player's settlements
+          cities: [], //player's cities
+          victoryPoints: 0, //player's victory points
+          longestRoadCount: 0, //the size of the player's longest road
+          armyCount: 0, //the size of the player's largest army
+        },
+      ])
+    ),
+  };
+}
+
+function initializeGame(data, uuid) {
+  //this method is called when receiving a 'startGame' message from the server. Get the room and game state, then broadcast to room to move to game screen
+  const { pin, room } = getContext(uuid);
+  room.gameState = createGameState(room);
+  broadcastToRoom(pin, { type: "initializeGame" });
+}
+
+function getGameState(data, uuid) {
+  //this method is called once the game is initialized, to get the game state onto the client side.
+  const { gameState } = getContext(uuid);
+
+  broadcastGameState(gameState);
+
+  //after the game state is sent for the first time, we also must prompt player 1 to place their first settlement.
+  if (!gameState.gameStarted) {
+    gameState.gameStarted = true;
+    setTimeout(() => {
+      promptSettlementPlacement(gameState, gameState.turnOrder[0]);
+    });
+  }
+}
+
+function broadcastGameState(gameState) {
+  //broadcast a clean game state to each player
+  for (const playerId of gameState.turnOrder) {
+    const clientGameState = getClientGameState(gameState, playerId);
+    broadcastToPlayer(playerId, { type: "getGameState", gameState: clientGameState });
+  }
+}
+
+function getClientGameState(gameState, uuid) {
+  //some information such as opponent resources and dev cards should be hidden from players, so we must filter the game state before sending it
+  const publicPlayers = {};
+  for (const [id, player] of Object.entries(gameState.players)) {
+    publicPlayers[id] = {
+      username: player.username,
+      roads: player.roads,
+      settlements: player.settlements,
+      cities: player.cities,
+      victoryPoints: player.victoryPoints,
+      longestRoadCount: player.longestRoadCount,
+      armyCount: player.armyCount,
+      devCardCount: player.devCards.length,
+      ...(id === uuid
+        ? {
+            resources: player.resources,
+            devCards: player.devCards,
+          }
+        : {
+            resourceCount: Object.values(player.resources).reduce((a, b) => a + b, 0),
+          }),
+    };
+  }
+
+  const { players: _, ...clientState } = gameState;
+  return { ...clientState, players: publicPlayers };
+}
+
+function generateBoard() {
+  //add all 19 resources to the array based on how many of each there are
+  let resources = [];
+  const tileCounts = { wood: 4, wheat: 4, sheep: 4, ore: 3, brick: 3, desert: 1 };
+  Object.entries(tileCounts).forEach(([type, count]) => {
+    for (let i = 0; i < count; i++) {
+      resources.push(type);
+    }
+  });
+  resources = shuffle(resources);
+
+  //shuffle the tile numbers (that correspond to the rarity of each resource)
+  const TILE_NUMBERS = [5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 4, 5, 6, 3, 11];
+  const numbers = shuffle([...TILE_NUMBERS]);
+
+  //now for all 19 tiles, we get their resource and number (skipping desert) then push a tile object onto the tile array
+  const tiles = [];
+  for (let i = 0; i < 19; i++) {
+    const type = resources[i];
+    const number = type === "desert" ? 7 : numbers.pop();
+    tiles.push({ id: i, type, number, hasRobber: type === "desert", vertices: tileToVertices[i] });
+  }
+
+  //generate the 9 ports and the vertices they are attached to
+  const ports = [
+    { type: "threeForOne", vertex: 4, angle: 0 },
+    { type: "threeForOne", vertex: 5, angle: -60 },
+    { type: "twoForOne", resource: "wheat", vertex: 6, angle: 0 },
+    { type: "twoForOne", resource: "wheat", vertex: 9, angle: 60 },
+    { type: "twoForOne", resource: "ore", vertex: 11, angle: 60 },
+    { type: "twoForOne", resource: "ore", vertex: 22, angle: 0 },
+    { type: "threeForOne", vertex: 35, angle: -60 },
+    { type: "threeForOne", vertex: 36, angle: 60 },
+    { type: "twoForOne", resource: "sheep", vertex: 45, angle: 0 },
+    { type: "twoForOne", resource: "sheep", vertex: 46, angle: -60 },
+    { type: "threeForOne", vertex: 48, angle: 60 },
+    { type: "threeForOne", vertex: 49, angle: 0 },
+    { type: "threeForOne", vertex: 50, angle: 0 },
+    { type: "threeForOne", vertex: 51, angle: -60 },
+    { type: "twoForOne", resource: "brick", vertex: 26, angle: 60 },
+    { type: "twoForOne", resource: "brick", vertex: 40, angle: -60 },
+    { type: "twoForOne", resource: "wood", vertex: 16, angle: -60 },
+    { type: "twoForOne", resource: "wood", vertex: 17, angle: 60 },
+  ];
+
+  return { tiles, ports };
+}
+
+function generateDevCards() {
+  //generate a deck of 25 development cards
+  const deck = [];
+  for (let i = 0; i < 14; i++) deck.push("knight");
+  for (let i = 0; i < 5; i++) deck.push("victoryPoint");
+  for (let i = 0; i < 2; i++) deck.push("roadBuilding");
+  for (let i = 0; i < 2; i++) deck.push("monopoly");
+  for (let i = 0; i < 2; i++) deck.push("yearOfPlenty");
+  return deck;
+}
+
+function rollDice(data, uuid) {
+  //called at the beginning of a player's turn when they roll the dice
+  const { pin, gameState, player } = getContext(uuid);
+  if (gameState.action !== "roll") return;
+  if (gameState.turnOrder[gameState.turn] !== uuid) return;
+
+  //roll both dice and add them up
+  let dice1 = Math.floor(Math.random() * 6) + 1;
+  let dice2 = Math.floor(Math.random() * 6) + 1;
+  let value = dice1 + dice2;
+
+  broadcastToPlayer(uuid, { type: "diceResult", dice1, dice2 });
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} rolled a${value === 8 || value === 11 ? "n" : ""} ${value}`, uuid });
+
+  //if a 7 is rolled, we must handle the discarding and moving of the robber
+  if (value === 7) {
+    handleSeven(uuid);
+  } else {
+    //deal players resources if necessary, then send the update back to client
+    dealResources(value, gameState);
+    gameState.action = "selectAction";
+    nextAction(uuid);
+  }
+}
+
+function handleSeven(uuid) {
+  //handles when a 7 is rolled. Identifies and prompts players who need to discard
+  const { gameState } = getContext(uuid);
+  gameState.action = "robber";
+  gameState.robber = {
+    mover: uuid,
+    discardsPending: [],
+  };
+  broadcastGameState(gameState);
+
+  //for each player, check how many resources they have. If they have more than 7, they must discard half of them (rounded down)
+  for (const [playerId, player] of Object.entries(gameState.players)) {
+    const totalResources = Object.values(player.resources).reduce((sum, val) => sum + val, 0);
+    if (totalResources > 7) {
+      const discardCount = Math.floor(totalResources / 2);
+      gameState.robber.discardsPending.push(playerId);
+      broadcastToPlayer(playerId, { type: "discardPrompt", count: discardCount, resources: { ...player.resources } });
+    }
+  }
+
+  //if nobody needs to discard, then prompt the current player to move the robber
+  if (gameState.robber.discardsPending.length === 0) promptRobberPlacement(uuid);
+}
+
+function promptRobberPlacement(uuid) {
+  const { gameState } = getContext(uuid);
+  gameState.action = "robber";
+  broadcastGameState(gameState);
+  const validRobberPlacements = getValidRobberPlacements(uuid);
+  broadcastToPlayer(uuid, { type: "placeRobberPrompt", validRobberPlacements });
+}
+
+function placeRobber(data, uuid) {
+  const { pin, gameState, player } = getContext(uuid);
+  const chosenTileId = data.tile;
+
+  //update the tiles so that the robber is at the specified spot, then update game state so players can see
+  for (const tile of gameState.board.tiles) {
+    tile.hasRobber = tile.id === chosenTileId;
+  }
+
+  //get the tile object using the id
+  const chosenTile = gameState.board.tiles.find((t) => t.id === chosenTileId);
+  if (!chosenTile) return;
+
+  //find players to be stolen from
+  const victims = [];
+  for (const [otherId, otherPlayer] of Object.entries(gameState.players)) {
+    if (otherId === uuid) continue;
+
+    //if the player has a settlement/city at this tile AND if they have any resources, they become an eligible victim to be stolen from
+    const hasSettlementHere = otherPlayer.settlements.some((vertex) => chosenTile.vertices.includes(vertex));
+    const hasCityHere = otherPlayer.cities.some((vertex) => chosenTile.vertices.includes(vertex));
+    const hasResources = Object.values(otherPlayer.resources).some((v) => v > 0);
+    if ((hasSettlementHere || hasCityHere) && hasResources) {
+      const resourceCount = Object.values(otherPlayer.resources).reduce((a, b) => a + b, 0);
+      victims.push({ uuid: otherId, username: otherPlayer.username, resourceCount });
+    }
+  }
+
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} moved the robber`, uuid });
+  broadcastGameState(gameState);
+
+  //prompt the current player to steal from one of the victims
+  if (victims.length > 0) {
+    broadcastToPlayer(uuid, { type: "stealPrompt", victims });
+  } else {
+    //if no players to steal from, end this action and prompt user for next action
+    delete gameState.robber;
+    nextAction(uuid);
+  }
+}
+
+function discardResources(data, uuid) {
+  //takes in a player's discarded resources and removes them from their hand
+  const { pin, gameState, player } = getContext(uuid);
+  const discardedResources = data.resources;
+
+  //check if the discard is of valid size
+  const totalBefore = Object.values(player.resources).reduce((a, b) => a + b, 0);
+  const expected = Math.floor(totalBefore / 2);
+  const actual = Object.values(discardedResources).reduce((a, b) => a + b, 0);
+  if (actual !== expected) return;
+
+  //ensure that the player indeed owns all the resources they are discarding
+  for (const [type, amount] of Object.entries(discardedResources)) {
+    if ((player.resources[type] || 0) < amount) return;
+  }
+
+  //loop through selected resources, remove them from the player's hand and put them back in the bank
+  for (const [type, amount] of Object.entries(discardedResources)) {
+    player.resources[type] -= amount;
+    gameState.bank[type] = (gameState.bank[type] || 0) + amount;
+  }
+
+  //remove player from pending discards
+  gameState.robber.discardsPending = gameState.robber.discardsPending.filter((id) => id !== uuid);
+
+  //send the updated game state to the room
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} discarded half of their resources`, uuid });
+  broadcastGameState(gameState);
+
+  //if all discards are done, prompt the current player to move the robber
+  if (gameState.robber.discardsPending.length === 0) promptRobberPlacement(gameState.robber.mover);
+}
+
+function getValidRobberPlacements(uuid) {
+  //return all tiles that the robber can be moved to (ie. anywhere except where it already is)
+  const { gameState } = getContext(uuid);
+  return gameState.board.tiles.filter((tile) => !tile.hasRobber).map((tile) => tile.id);
+}
+
+function steal(data, uuid) {
+  const { victimId } = data;
+  const { gameState, pin, player } = getContext(uuid);
+
+  //get the victim and their resources (if they dont exist or they have no resources, return)
+  const { player: victim } = getContext(victimId);
+  if (!victim) return;
+  const available = Object.entries(victim.resources).filter(([_, amt]) => amt > 0);
+  if (!available.length) return;
+
+  //remove the resource from the victim's hand, add it to the stealer's hand
+  const [resource] = available[Math.floor(Math.random() * available.length)];
+  victim.resources[resource] -= 1;
+  player.resources[resource] = (player.resources[resource] || 0) + 1;
+
+  //update game state and send player what they stole
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} stole a resource from ${victim.username}`, uuid });
+  broadcastToPlayer(uuid, { type: "stealResult", resource });
+
+  //delete robber phase, and prompt player for their next action
+  delete gameState.robber;
+  broadcastGameState(gameState);
+  nextAction(uuid);
+}
+
+function purchaseDevCard(data, uuid) {
+  const { pin, gameState, player } = getContext(uuid);
+
+  //return conditions (no dev cards left, can't afford, not player's turn)
+  if (gameState.devCards.length === 0) return;
+  if (!canAfford(player, { wheat: 1, ore: 1, sheep: 1 })) return;
+  if (uuid !== gameState.turnOrder[gameState.turn]) return;
+
+  //charge the player for the development card, pop it from the deck, and lock it (since they cannot play it the same turn they bought it)
+  chargePlayer(player, { wheat: 1, ore: 1, sheep: 1 });
+  const index = Math.floor(Math.random() * gameState.devCards.length);
+  const [cardType] = gameState.devCards.splice(index, 1);
+  const devCard = { type: cardType, locked: true, played: false };
+  player.devCards.push(devCard);
+
+  //let the room know that the player drew a dev card
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} purchased a development card`, uuid });
+  broadcastGameState(gameState);
+
+  //let the player know what dev card they drew, then update their possible actions
+  broadcastToPlayer(uuid, { type: "devCard", devCard });
+  nextAction(uuid);
+}
+
+function shuffle(array) {
+  //shuffle an array using Fisher-Yates style algorithm
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+function dealResources(tileNum, gameState) {
+  //deal resources to each player (given that the bank has them), returning only those that got new resources
+  const chosenTiles = [];
+
+  //first get all the tiles that have the correct number based on the dice roll
+  for (const tile of gameState.board.tiles) {
+    if (tile.number !== tileNum || tile.hasRobber) continue;
+    chosenTiles.push(tile);
+  }
+
+  //for each tile...
+  for (const tile of chosenTiles) {
+    const { type, vertices } = tile;
+
+    //...for each player...
+    for (const playerId in gameState.players) {
+      const player = gameState.players[playerId];
+
+      //...for each of their settlements...
+      for (const settlement of player.settlements) {
+        //if their settlements are on one of the tile's vertices, then increase their resource count for that tile's resource
+        if (vertices.includes(settlement) && (gameState.bank[type] || 0) >= 1) {
+          player.resources[type] = (player.resources[type] || 0) + 1;
+          gameState.bank[type] -= 1;
+        }
+      }
+
+      //do the same for cities, but add 2 of the resource instead
+      for (const city of player.cities) {
+        if (vertices.includes(city) && (gameState.bank[type] || 0) >= 2) {
+          player.resources[type] = (player.resources[type] || 0) + 2;
+          gameState.bank[type] -= 2;
+        } else if (vertices.includes(city) && (gameState.bank[type] || 0) >= 1) {
+          //if bank only has 1 left, give 1 instead of 2
+          player.resources[type] = (player.resources[type] || 0) + 1;
+          gameState.bank[type] -= 1;
+        }
+      }
+    }
+  }
+}
+
+function playDevCard(data, uuid) {
+  const { gameState, player, pin } = getContext(uuid);
+
+  //return checks: if it's not the player's turn, or if a dev card has been played this turn
+  if (gameState.turnOrder[gameState.turn] !== uuid) return;
+
+  //get the type of the development card
+  const type = data.card.type;
+
+  //find the card in the player's hand, return if they do not have it then mark the card as played
+  const card = player.devCards.find((card) => card.type === type && !card.locked && !card.played);
+  if (!card) return;
+
+  //mark this card as played, then lock all the other cards since you can only play 1 per turn
+  card.played = true;
+  for (const devCard of player.devCards) devCard.locked = true;
+
+  //proceed based on the type of dev card played (victory point cards excluded since they are not 'played')
+  switch (type) {
+    case "roadBuilding": //create roadbuilding state then prompt player to place first road
+      gameState.roadBuilding = { player: uuid, roadsPlaced: 0, inProgress: true };
+      promptRoadPlacement(null, uuid);
+      break;
+    case "monopoly": //prompt user to select resource for monopoly
+      broadcastToPlayer(uuid, { type: "monopolyPrompt" });
+      break;
+    case "yearOfPlenty": //prompt user to select two resources to acquire
+      broadcastToPlayer(uuid, { type: "yearOfPlentyPrompt" });
+      break;
+    case "knight": //increment the player's army count, check who has the largest army, then prompt the player to place the robber
+      promptRobberPlacement(uuid);
+      break;
+  }
+  return;
+}
+
+function monopoly(data, uuid) {
+  //call a monopoly development card (every opponent has to give the current player all of a specified resource)
+  const { gameState, player, pin } = getContext(uuid);
+  if (gameState.turnOrder[gameState.turn] !== uuid) return;
+
+  const { resource } = data;
+
+  let totalStolen = 0;
+
+  //for each opponent, get their amount of the specified resource. If they have any, then set that resource to 0
+  for (const [opponentId, opponent] of Object.entries(gameState.players)) {
+    if (opponentId === uuid) continue;
+    const amount = opponent.resources[resource] || 0;
+    if (amount > 0) {
+      totalStolen += amount;
+      opponent.resources[resource] = 0;
+    }
+  }
+
+  //give all collected resources to current player
+  player.resources[resource] = (player.resources[resource] || 0) + totalStolen;
+
+  //update the game state
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} called monopoly, gained ${totalStolen} ${resource}`, uuid });
+  broadcastGameState(gameState);
+  nextAction(uuid);
+}
+
+function yearOfPlenty(data, uuid) {
+  const { gameState, player, pin } = getContext(uuid);
+  if (gameState.turnOrder[gameState.turn] !== uuid) return;
+
+  //validate the resources input
+  const { resources } = data;
+  if (!Array.isArray(resources) || resources.length !== 2) return;
+
+  //for each chosen resource, add it to the player's resource count
+  const validResources = ["wood", "brick", "sheep", "wheat", "ore"];
+  for (const resource of resources) {
+    if (!validResources.includes(resource)) return;
+    player.resources[resource] = (player.resources[resources] || 0) + 1;
+  }
+
+  //format the log message to look nice
+  let resourceString = "";
+  if (resources[0] === resources[1]) {
+    resourceString = `2 ${resources[0]}`;
+  } else {
+    resourceString = `a${resources[0] === "ore" ? "n ore" : ` ${resources[0]}`} and a${resources[1] === "ore" ? "n ore" : ` ${resources[1]}`}`;
+  }
+
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} called year of plenty, gained ${resourceString}`, uuid });
+  broadcastGameState(gameState);
+}
+
+function getVictoryPoints(uuid) {
+  //calculate a single player's victory points
+  const { gameState, player } = getContext(uuid);
+
+  let points = 0;
+
+  //1 point per settlement, 2 points per city
+  points += player.settlements.length;
+  points += player.cities.length * 2;
+
+  //1 point for each victory point dev card
+  const devCardPoints = player.devCards.filter((card) => card.type === "victoryPoint");
+  points += devCardPoints.length;
+
+  //2 points for largest army or longest road
+  if (gameState.longestRoad === uuid) points += 2;
+  if (gameState.largestArmy === uuid) points += 2;
+
+  return points;
+}
+
+function nextAction(uuid) {
+  const { gameState } = getContext(uuid);
+
+  //after each action, check players' longest road/largest army counts/victory points, and determine a winner if necessary
+  for (const [playerId, player] of Object.entries(gameState.players)) {
+    player.longestRoadCount = getLongestRoadLength(playerId);
+    player.armyCount = player.devCards.filter((card) => card.type === "knight" && card.played).length;
+    player.victoryPoints = getVictoryPoints(playerId);
+    if (player.victoryPoints >= 10) endGame(playerId);
+  }
+
+  //update the game state with all this new info
+  gameState.action = "selectAction";
+  broadcastGameState(gameState);
+
+  //prompt the current player for their next move
+  const possibleActions = getPossibleActions(uuid);
+  broadcastToPlayer(uuid, { type: "selectAction", possibleActions });
+}
+
+function endGame(winner) {
+  //finish later
+}
+
+function nextTurn(data, uuid) {
+  //prompt the next player to play their turn
+  const { pin, gameState, player } = getContext(uuid);
+
+  if (gameState.action === "robber") return;
+
+  //unlock the player's development cards so they can be used next turn
+  for (const devCard of player.devCards) devCard.locked = false;
+
+  //get the number of players in this game
+  const numPlayers = gameState.turnOrder.length;
+
+  //in the setup phase, turns go in a snake-like order (1-2-3-3-2-1)
+  if (gameState.phase === "setup") {
+    gameState.placementStep++;
+
+    //if we have completed all placement steps, we can now start the playing phase
+    if (gameState.placementStep >= numPlayers * 2) {
+      startPlayingPhase(gameState);
+    } else {
+      //get next player, keeping in mind the snake-order. Update the game state for all players then prompt next player
+      const step = gameState.placementStep;
+      const nextPlayer = step < numPlayers ? gameState.turnOrder[step] : gameState.turnOrder[2 * numPlayers - 1 - step];
+      gameState.turn = step < numPlayers ? step : 2 * numPlayers - 1 - step;
+      broadcastGameState(gameState);
+      promptSettlementPlacement(null, nextPlayer);
+    }
+    return;
+  }
+
+  //in the playing phase, get the next player in-order, they will be prompted to roll the dice
+  gameState.action = "roll";
+  gameState.turn = (gameState.turn + 1) % numPlayers;
+  broadcastGameState(gameState);
+}
+
+function startPlayingPhase(gameState) {
+  //first, we deal each player their starting resources (using their last placed settlement)
+  for (const uuid of gameState.turnOrder) {
+    const player = gameState.players[uuid];
+    const secondSettlement = player.settlements[1];
+
+    //get the tiles that the vertex is connected to
+    const tileIds = vertexToTiles[secondSettlement];
+
+    //for each of those tiles, deal the player a resource card of that type
+    tileIds.forEach((tileId) => {
+      const tile = gameState.board.tiles[tileId];
+      if (tile.type !== "desert") {
+        player.resources[tile.type]++;
+        gameState.bank[tile.type]--;
+      }
+    });
+  }
+
+  //transition from the setup phase to the playing phase, and get next player's turn
+  gameState.phase = "playing";
+  gameState.turn = -1;
+  nextTurn(null, gameState.turnOrder[0]);
+}
+
+function canAfford(player, cost) {
+  //check if a player can afford a specified cost
+  for (let resource in cost) {
+    if (player.resources[resource] < cost[resource]) return false;
+  }
+  return true;
+}
+
+function chargePlayer(player, cost) {
+  //charge a player a specified cost of resources
+  for (let resource in cost) {
+    player.resources[resource] -= cost[resource];
+  }
+}
+
+function determineLargestArmy(uuid) {
+  //find the player who has the largest army
+  const { pin, gameState } = getContext(uuid);
+  let largestArmy = 0;
+  let potentialHolder = null;
+
+  for (const [playerId, player] of Object.entries(gameState.players)) {
+    //count each 'played' knight card
+    const armySize = player.devCards.filter((card) => card.type === "knight" && card.played).length;
+    if (armySize > largestArmy) {
+      largestArmy = armySize;
+      potentialHolder = player;
+    }
+  }
+
+  //the largest army must be of size 3 at least to qualify
+  if (largestArmy < 3) return null;
+
+  //largest army gets overtaken by another player
+  if (gameState.largestArmy && gameState.largestArmy !== potentialHolder) {
+    broadcastToRoom(pin, { type: "logMessage", message: `${gameState.largestArmy.username} lost largest army`, uuid });
+  }
+
+  //largest army gets acquired by a player (whether overtaken or not)
+  if (gameState.largestArmy !== potentialHolder) {
+    broadcastToRoom(pin, { type: "logMessage", message: `${potentialHolder.username} gained largest army`, uuid });
+    return potentialHolder;
+  }
+
+  //current holder remains if they do not get overtaken
+  return gameState.largestArmy;
+}
+
+function getContext(uuid) {
+  //this method finds the room pin, room, gamestate, and player object based on the passed UUID
+  const pin = playerToRoom[uuid];
+  const room = rooms[pin];
+  const gameState = room?.gameState;
+  const player = gameState?.players[uuid];
+  return { pin, room, gameState, player };
+}
+
+function getPossibleActions(uuid) {
+  //this method checks if the player has the appropriate facilities for the action buttons to be enabled
+  const { player, gameState } = getContext(uuid);
+  const actions = {};
+
+  //check if player can place a settlement
+  if (player.settlements.length < 5) {
+    //first check: they must have less than 5 settlements
+    if (getValidSettlementPlacements(gameState, uuid).length > 0) {
+      //second check: they must have somewhere to put the settlement
+      if (canAfford(player, { wood: 1, brick: 1, wheat: 1, sheep: 1 })) {
+        //third check: they must be able to afford the settlement
+        actions.placeSettlement = { allowed: true };
+      } else actions.placeSettlement = { allowed: false, reason: "insufficientResources" };
+    } else actions.placeSettlement = { allowed: false, reason: "noValidSpots" };
+  } else actions.placeSettlement = { allowed: false, reason: "maxSettlements" };
+
+  //check if player can place road
+  if (player.roads.length < 15) {
+    //first check: they must have less than 15 roads
+    if (getValidRoadPlacements(gameState, uuid).length > 0) {
+      //second check: they must have somewhere to build the road
+      if (canAfford(player, { wood: 1, brick: 1 })) {
+        //third check: they must be able to afford the road
+        actions.placeRoad = { allowed: true };
+      } else actions.placeRoad = { allowed: false, reason: "insufficientResources" };
+    } else actions.placeRoad = { allowed: false, reason: "noValidSpots" };
+  } else actions.placeRoad = { allowed: false, reason: "maxRoads" };
+
+  //check if player can place a city
+  if (player.cities.length < 4) {
+    //first check: they must have fewer than 4 cities already
+    if (player.settlements.length > 0) {
+      //second check: they must have an upgradable settlement on the board
+      if (canAfford(player, { ore: 3, wheat: 2 })) {
+        //third check: they must be able to afford the city
+        actions.placeCity = { allowed: true };
+      } else actions.placeCity = { allowed: false, reason: "insufficientResources" };
+    } else actions.placeCity = { allowed: false, reason: "noSettlements" };
+  } else actions.placeCity = { allowed: false, reason: "maxCities" };
+
+  //check if player can afford a development card
+  if (gameState.devCards.length > 0) {
+    //first check: confirm that there are development cards in the deck
+    if (canAfford(player, { wheat: 1, ore: 1, sheep: 1 })) {
+      //second check: confirm that they can afford the development card
+      actions.buyDevCard = { allowed: true };
+    } else actions.buyDevCard = { allowed: false, reason: "insufficientResources" };
+  } else actions.buyDevCard = { allowed: false, reason: "noDevCardsLeft" };
+
+  //check if player can trade (as long as the player has at least one resource, they can trade it)
+  const hasResources = Object.values(player.resources).some((amount) => amount > 0);
+  actions.trade = hasResources ? { allowed: true } : { allowed: false, reason: "noResources" };
+
+  //check if player can exchange with the bank (based on amount of their resources and which ports they're on)
+  const bankOptions = getBankTradeOptions(uuid);
+  actions.bank = bankOptions.length > 0 ? { allowed: true, options: bankOptions } : { allowed: false, reason: "noOptions" };
+  return actions;
+}
+
+function getPlayerPorts(uuid) {
+  //for each port on the board, check if the player is built there. If so, add to their list of ports, then return list
+  const { gameState, player } = getContext(uuid);
+  const ports = [];
+  for (const port of gameState.board.ports) {
+    const isConnected = player.settlements.includes(port.vertex) || player.cities.includes(port.vertex);
+    if (isConnected) ports.push(port);
+  }
+  return ports;
+}
+
+function getBankTradeOptions(uuid) {
+  const { player } = getContext(uuid);
+  const options = [];
+  const ports = getPlayerPorts(uuid);
+
+  //determine each resource's trade rate by seeing if they have a generic 3:1 port. If so, rate is 3, if not, rate is 4
+  const hasGenericPort = ports.some((port) => port.type === "threeForOne");
+  const tradeRates = Object.fromEntries(Object.keys(player.resources).map((res) => [res, hasGenericPort ? 3 : 4]));
+
+  //if the player has a 2:1 port, then that resource has a rate of 2
+  for (const port of ports) {
+    if (port.type === "twoForOne") tradeRates[port.resource] = 2;
+  }
+
+  //for each resource and its rate, if the player can afford to trade that resource, add it to the list of options
+  for (const [resource, rate] of Object.entries(tradeRates)) {
+    if ((player.resources[resource] || 0) >= rate) options.push({ give: { [resource]: rate } });
+  }
+  return options;
+}
+
+function bankTrade(data, uuid) {
+  const { player, gameState, pin } = getContext(uuid);
+  const { give, receive } = data;
+
+  //checks: if it's not the player's turn, or they can't afford the give, or the give is not a valid option for them, or the bank has none of that resource left, return
+  if (gameState.turnOrder[gameState.turn] !== uuid) return;
+  if (!canAfford(player, give)) return;
+  const isValidGive = getBankTradeOptions(uuid).some((option) => Object.keys(option.give).length === Object.keys(give).length && Object.entries(option.give).every(([res, amt]) => give[res] === amt));
+  if (!isValidGive) return;
+  if ((gameState.bank[receive] || 0) < 1) return;
+
+  //decrement "give" resource from the player and give to bank. decrement "receive" resource from the bank and give to player.
+  const [giveResource, giveAmount] = Object.entries(give)[0];
+  player.resources[giveResource] -= giveAmount;
+  player.resources[receive] = (player.resources[receive] || 0) + 1;
+  gameState.bank[giveResource] = (gameState.bank[giveResource] || 0) + giveAmount;
+  gameState.bank[receive] -= 1;
+
+  //update the game state and let player continue their turn
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} traded ${giveAmount} ${giveResource} to the bank for 1 ${receive}`, uuid });
+  broadcastGameState(gameState);
+  nextAction(uuid);
+}
+
+function placeSettlement(data, uuid) {
+  //first we must get the gameState for the player's room, then validate if we should indeed be placing a settlement
+  const { pin, gameState, player } = getContext(uuid);
+  const { location } = data;
+  if (gameState.action !== "settlement") return { success: false, error: "cannotPlaceSettlement" };
+
+  //verify that the chosen location is a valid spot to place a settlement
+  const validSettlements = getValidSettlementPlacements(gameState, uuid);
+  if (!validSettlements.includes(location)) return { success: false, error: "invalidPlacement" };
+
+  //confirm that the player has the appropriate resources for the settlement, and deduct
+  if (gameState.phase === "playing") {
+    const cost = { wood: 1, brick: 1, wheat: 1, sheep: 1 };
+    if (!canAfford(player, cost)) return { success: false, error: "cannotAfford" };
+    chargePlayer(player, cost);
+  }
+
+  //update the game state with the newly added settlement
+  player.settlements.push(location);
+  gameState.takenVertices.push(location);
+
+  //broadcast the settlement placement to the entire room
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} placed a settlement`, uuid });
+  broadcastGameState(gameState);
+
+  if (gameState.phase === "setup") {
+    //if in the setup phase, we must now prompt the player to place a road at this specific location
+    promptRoadPlacement(null, uuid, location);
+  } else {
+    //if in the playing phase, let the player choose their next action
+    nextAction(uuid);
+  }
+
+  return { success: true };
+}
+
+function getValidSettlementPlacements(gameState, uuid) {
+  const validSettlements = [];
+
+  for (let i = 0; i < 54; i++) {
+    //verify that there is not a settlement already at this spot
+    if (gameState.takenVertices.includes(i)) continue;
+
+    //verify that there are no neighbouring settlements to this one, using the adjacency matrix
+    const neighbours = adjacentVertices[i];
+    if (neighbours.some((vertex) => gameState.takenVertices.includes(vertex))) continue;
+
+    //verify that the chosen settlement placement is connected to one of their roads
+    if (gameState.phase === "playing") {
+      const connected = gameState.players[uuid].roads.some(([a, b]) => a === i || b === i);
+      if (!connected) continue;
+    }
+    validSettlements.push(i);
+  }
+
+  return validSettlements;
+}
+
+function promptSettlementPlacement(data, uuid) {
+  //get all valid settlement placements for the current player
+  const { gameState, pin } = getContext(uuid);
+  if (uuid != gameState.turnOrder[gameState.turn]) return;
+  gameState.action = "settlement";
+  const validSettlements = getValidSettlementPlacements(gameState, uuid);
+  broadcastToPlayer(uuid, { type: "settlementPrompt", validSettlements });
+  broadcastGameState(gameState);
+}
+
+function placeCity(data, uuid) {
+  const { pin, gameState, player } = getContext(uuid);
+  const { location } = data;
+
+  //check that this placement is valid
+  if (gameState.action !== "city") return;
+  if (!player.settlements.includes(location)) return;
+  if (!canAfford(player, { ore: 3, wheat: 2 })) return;
+
+  //switch to city by removing the player's settlement and adding it to their city list, then charge the player
+  chargePlayer(player, { ore: 3, wheat: 2 });
+  player.settlements = player.settlements.filter((vertex) => vertex !== location);
+  player.cities.push(location);
+
+  //update the game's state and broadcast the changes to the room
+  gameState.action = "selectAction";
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} upgraded to a city`, uuid });
+  broadcastGameState(gameState);
+
+  //end this action and let player choose their next action
+  nextAction(uuid);
+}
+
+function promptCityPlacement(data, uuid) {
+  const { gameState, player, pin } = getContext(uuid);
+  gameState.action = "city";
+  const validCities = player.settlements;
+  broadcastToPlayer(uuid, { type: "cityPrompt", validCities });
+  broadcastGameState(gameState);
+}
+
+/*------------------- ROADS ----------------------*/
+
+function placeRoad(data, uuid) {
+  //first get all the game state/player/room info and verify the action
+  const { pin, gameState, player } = getContext(uuid);
+  if (gameState.action !== "road") return;
+  if (gameState.turnOrder[gameState.turn] !== uuid) return;
+
+  //get the 'from' and 'to' indices from the request
+  const { from, to } = data;
+  const roadKey = getRoadKey(from, to);
+
+  //get all the valid road positions for this player and return if their chosen road spot is invalid
+  const validRoads = getValidRoadPlacements(gameState, uuid);
+  const isValid = validRoads.some(([a, b]) => (a === from && b === to) || (a === to && b === from));
+  if (!isValid) return;
+
+  //confirm that the player has the appropriate resources, and charge them (unless in road building where roads are free)
+  if (gameState.phase === "playing" && !gameState.roadBuilding?.inProgress) {
+    const cost = { wood: 1, brick: 1 };
+    if (!canAfford(player, cost)) return { success: false, error: "cannotAfford" };
+    chargePlayer(player, cost);
+  }
+
+  //now add the road to the player's list of roads, and add its key to taken edges set
+  player.roads.push([Math.min(from, to), Math.max(from, to)]);
+  gameState.takenEdges.push(roadKey);
+
+  //if roadBuilding card is active, check if the player needs to place their second road
+  if (gameState.roadBuilding?.inProgress && gameState.roadBuilding.player === uuid) {
+    gameState.roadBuilding.roadsPlaced++;
+
+    //prompt road placement again if needed, or delete roadBuilding state
+    if (gameState.roadBuilding.roadsPlaced < 2) {
+      broadcastToRoom(pin, { type: "logMessage", message: `${player.username} placed a road`, uuid });
+      promptRoadPlacement(null, uuid);
+      return;
+    } else delete gameState.roadBuilding;
+  }
+
+  //broadcast road update to the room
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} placed a road`, uuid });
+  broadcastGameState(gameState);
+
+  //if in setup phase, proceed to next turn. If in playing phase, send next action options to player
+  if (gameState.phase === "setup") {
+    nextTurn(null, uuid);
+  } else if (gameState.phase === "playing") {
+    nextAction(uuid);
+  }
+}
+
+function getValidRoadPlacements(gameState, uuid, location) {
+  const validRoads = [];
+  const player = gameState.players[uuid];
+
+  //loop through each possible road placement spot
+  for (const [from, to] of roadSpots) {
+    //filter out roads that are already taken
+    const roadKey = getRoadKey(from, to);
+    if (gameState.takenEdges.includes(roadKey)) continue;
+
+    //if a location is specified, then we only want to place roads at this particular house (during setup phase)
+    if (location) {
+      if (location === from || location === to) validRoads.push([from, to]);
+    } else {
+      //check if the road spot can be connected to one of the player's existing roads or settlements, and add to the valid list
+      const connectedToSettlement = player.settlements.includes(from) || player.settlements.includes(to);
+      const connectedToRoad = player.roads.some(([a, b]) => [a, b].includes(from) || [a, b].includes(to));
+      if ((connectedToSettlement || connectedToRoad) && !isBlocked(uuid, [from, to])) validRoads.push([from, to]);
+    }
+  }
+  return validRoads;
+}
+
+function isBlocked(uuid, proposedRoad) {
+  const { player } = getContext(uuid);
+  const opponentVertices = getOpponentVertices(uuid);
+
+  //get the vertices of the road we are trying to figure out is blocked or not
+  const [from, to] = proposedRoad;
+
+  //if both vertices are blocked (somehow), then this road is definitely blocked
+  if (opponentVertices.has(from) && opponentVertices.has(to)) return true;
+
+  //if neither vertices are blocked, then this road is definitely not blocked
+  if (!opponentVertices.has(from) && !opponentVertices.has(to)) return false;
+
+  //get the vertex that the opponent is NOT settled at
+  const unblockedVertex = opponentVertices.has(from) ? to : from;
+
+  //create a set of all vertices that appear in the player's roads
+  const visited = new Set();
+  for (const [a, b] of player.roads) {
+    visited.add(a);
+    visited.add(b);
+  }
+
+  //if the set contains the unblocked vertex, then the road is not blocked, since we can reach it from the opposite side of the opponent
+  return !visited.has(unblockedVertex);
+}
+
+function getRoadKey(from, to) {
+  return [Math.min(from, to), Math.max(from, to)].join("-");
+}
+
+function getOpponentVertices(uuid) {
+  //find all vertices owned by the passed player's opponents
+  const { gameState } = getContext(uuid);
+  const opponentVertices = new Set();
+  for (const [otherUUID, otherPlayer] of Object.entries(gameState.players)) {
+    if (otherUUID === uuid) continue;
+    for (const vertex of [...otherPlayer.settlements, otherPlayer.cities]) opponentVertices.add(vertex);
+  }
+  return opponentVertices;
+}
+
+function promptRoadPlacement(data, uuid, location) {
+  //gets all valid road placements for the player
+  const { gameState, pin } = getContext(uuid);
+  gameState.action = "road";
+  const validRoads = getValidRoadPlacements(gameState, uuid, location);
+  broadcastToPlayer(uuid, { type: "roadPrompt", validRoads });
+  broadcastGameState(gameState);
+}
+
+function determineLongestRoad(uuid) {
+  const { gameState, pin } = getContext(uuid);
+  let longestRoad = 0;
+  let potentialHolder = null;
+  let tie = false;
+
+  //first, we find each player's longest road
+  for (const [playerId, player] of Object.entries(gameState.players)) {
+    const length = getLongestRoadLength(playerId);
+
+    //if the player's length is longer than the current found longest road, set that player to the sole potential holder
+    if (length > longestRoad) {
+      longestRoad = length;
+      potentialHolder = player;
+      tie = false;
+      //if another player ties with the holder, mark the tie flag as true
+    } else if (length === longestRoad && longestRoad >= 5) tie = true;
+  }
+
+  //if the longest road is under 5, nobody gets longest road
+  if (longestRoad < 5) {
+    //if there WAS a previous longest road but not anymore, we must remove them as longest road and return null
+    if (gameState.longestRoad) broadcastToRoom(pin, { type: "logMessage", message: `${gameState.longestRoad.username} lost longest road`, uuid });
+    return null;
+  }
+
+  //if tied, then the current longest road holder remains
+  if (tie) return gameState.longestRoad;
+
+  //if we have a new longest road holder, return that player
+  if (potentialHolder !== gameState.longestRoad) {
+    if (gameState.longestRoad) broadcastToRoom(pin, { type: "logMessage", message: `${gameState.longestRoad.username} lost longest road`, uuid });
+    broadcastToRoom(pin, { type: "logMessage", message: `${potentialHolder.username} got longest road`, uuid });
+  }
+  return potentialHolder;
+}
+
+function getLongestRoadLength(uuid) {
+  const { player } = getContext(uuid);
+  const graph = roadGraph(player.roads);
+  let maxLength = 0;
+  const opponentVertices = getOpponentVertices(uuid);
+  for (const startingVertex of Object.keys(graph)) {
+    const visitedRoads = new Set();
+    const length = depthFirstSearch(startingVertex, null, graph, visitedRoads, opponentVertices);
+    maxLength = Math.max(maxLength, length);
+  }
+  return maxLength;
+}
+
+function roadGraph(roads) {
+  //create a road graph: for each 'from, to' pair, add them to each others' graphs if not already added
+  const graph = {};
+  for (const [a, b] of roads) {
+    if (!graph[a]) graph[a] = [];
+    if (!graph[b]) graph[b] = [];
+    graph[a].push(b);
+    graph[b].push(a);
+  }
+  return graph;
+}
+
+function depthFirstSearch(from, prev, graph, visitedRoads, opponentVertices) {
+  let max = 0;
+
+  //loop through each neighbouring road
+  for (const to of graph[from]) {
+    const roadKey = getRoadKey(from, to); //get the key for the road
+    if (visitedRoads.has(roadKey)) continue; //if the road has been visited already, continue
+    if (opponentVertices.has(to) && to !== prev) continue; //
+
+    //continue depth first search with each 'to' vertex
+    visitedRoads.add(roadKey);
+    const length = 1 + depthFirstSearch(to, from, graph, visitedRoads, opponentVertices);
+    visitedRoads.delete(roadKey);
+    max = Math.max(max, length);
+  }
+
+  //return the largest road from all possibilities of road traversals
+  return max;
+}
+
+function proposeTrade(data, uuid) {
+  const { gameState, player, pin } = getContext(uuid);
+  const { offer, request } = data;
+
+  //track the current trade in the game state (who is offering, what their offer/request is, and whether everyone responded)
+  if (gameState.activeTrade) return;
+  gameState.activeTrade = { offerer: uuid, offer, request, responses: {} };
+
+  //the user proposes a trade to all of their opponents
+  for (const [opponentId, opponent] of Object.entries(gameState.players)) {
+    if (uuid === opponentId) continue;
+    broadcastToPlayer(opponentId, { type: "tradePrompt", uuid, player, offer, request });
+  }
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} proposed a trade`, uuid });
+}
+
+function acceptTrade(data, uuid) {
+  const { gameState, player: acceptingPlayer, pin } = getContext(uuid);
+  const { offerer, accepter, offer, request } = data;
+  const { player: offeringPlayer } = getContext(offerer);
+
+  //checks (accepter is the one who made the call, or if either player can't afford their part)
+  if (!gameState.activeTrade) return;
+  if (gameState.activeTrade.responses[uuid] && gameState.activeTrade.responses[uuid] !== "pending") return;
+  if (uuid !== accepter) return;
+  if (!canAfford(offeringPlayer, offer)) return;
+  if (!canAfford(acceptingPlayer, request)) {
+    declineTrade(data, uuid);
+    return;
+  }
+
+  //remove resources from offering player's hand and give them to the accepting player
+  for (const [resource, amount] of Object.entries(offer)) {
+    offeringPlayer.resources[resource] -= amount;
+    acceptingPlayer.resources[resource] = (acceptingPlayer.resources[resource] || 0) + amount;
+  }
+
+  //remove resources from accepting player's hand and give them to the offering player
+  for (const [resource, amount] of Object.entries(request)) {
+    acceptingPlayer.resources[resource] -= amount;
+    offeringPlayer.resources[resource] = (offeringPlayer.resources[resource] || 0) + amount;
+  }
+
+  //update the changes to the room
+  delete gameState.activeTrade;
+  broadcastToRoom(pin, { type: "logMessage", message: `${acceptingPlayer.username} accepted a trade from ${offeringPlayer.username}`, uuid });
+  broadcastGameState(gameState);
+
+  //end the trade then prompt the offering player to select their next action
+  broadcastToRoom(pin, { type: "tradeComplete" });
+  nextAction(offerer);
+}
+
+function declineTrade(data, uuid) {
+  const { gameState, pin } = getContext(uuid);
+
+  //checks (if there's no currently active trade or if this player already responded)
+  if (!gameState.activeTrade) return;
+  const trade = gameState.activeTrade;
+  if (trade.responses[uuid]) return;
+
+  //mark this player as 'declined'
+  trade.responses[uuid] = "declined";
+
+  //check if there are any players who have yet to respond to the trade
+  const numResponders = gameState.turnOrder.length - 1;
+  const numResponses = Object.keys(trade.responses).length;
+  if (numResponses === numResponders) {
+    //if everyone responded, delete the active trade and broadcast the update to the room
+    delete gameState.activeTrade;
+    broadcastToRoom(pin, { type: "logMessage", message: `All players declined ${gameState.players[trade.offerer]?.username}'s trade`, uuid });
+    broadcastToRoom(pin, { type: "tradeComplete" });
+    nextAction(trade.offerer);
+  } else {
+    //if a player responds, let the offering player know that they declined
+    broadcastToPlayer(trade.offerer, { type: "tradeDeclined", numResponses, numResponders });
+  }
+}
+
+function cancelTrade(data, uuid) {
+  const { gameState, player, pin } = getContext(uuid);
+
+  //only the offerer can cancel the trade if there is an active one
+  const trade = gameState.activeTrade;
+  if (!trade || trade.offerer !== uuid) return;
+
+  //delete the active trade and broadcast to the room
+  delete gameState.activeTrade;
+  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} cancelled their trade`, uuid });
+  broadcastToRoom(pin, { type: "tradeComplete" });
+
+  //allow player to choose next action
+  nextAction(uuid);
+}
+
+module.exports = {
+  initializeGame,
+  getGameState,
+  nextTurn,
+  rollDice,
+  purchaseDevCard,
+  discardResources,
+  placeRobber,
+  placeSettlement,
+  placeRoad,
+  placeCity,
+  promptRoadPlacement,
+  promptSettlementPlacement,
+  promptCityPlacement,
+  playDevCard,
+  monopoly,
+  yearOfPlenty,
+  proposeTrade,
+  acceptTrade,
+  declineTrade,
+  cancelTrade,
+  bankTrade,
+  steal,
+};

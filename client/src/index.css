@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  margin: 5px;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #d3d4d9;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+
+button:disabled {
+  opacity: 30;
+  cursor: default;
+  pointer-events: none;
+  color: gray;
+}
+
+body {
+  background-image: linear-gradient(154deg, white 33.33%, #eeeeee 33.33%, #eeeeee 50%, white 50%, white 83.33%, #eeeeee 83.33%, #eeeeee 100%);
+  background-size: 6.84px 3.34px;
+}
+
+.card-container {
+  perspective: 1000px;
+}
+
+.card {
+  width: 100px;
+  height: 100px;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.6s;
+}
+
+.card.flipped {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+.card-front {
+  background: lightgrey;
+  color: black;
+  font-weight: bold;
+}
+
+.card-back {
+  transform: rotateY(180deg);
+  background: lightgrey;
+}
