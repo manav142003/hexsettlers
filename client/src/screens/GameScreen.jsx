@@ -10,6 +10,7 @@ import PlayerInfo from "../components/PlayerInfo";
 import PlayerColourProvider from "../context/PlayerColourProvider";
 import { colourPalette } from "../utils/colours";
 import StealMenu from "../components/StealMenu";
+import ServerLogToast from "../components/ServerLogToast";
 
 export default function GameScreen() {
   const { send, subscribe, id } = useSocket();
@@ -85,8 +86,8 @@ export default function GameScreen() {
 
   return (
     <PlayerColourProvider playerId={id} turnOrder={gameState.turnOrder} colourPalette={colourPalette}>
-      <div>NavBar goes here</div>
       <div className="max-w-[1500px] mx-auto px-5 sm:px-10 md:px-20">
+        <ServerLogToast />
         <div className="flex flex-col gap-4 w-full">
           <div className="flex flex-col xl:flex-row gap-4">
             <div className="flex items-center justify-center rounded-2xl shadow-lg border-6 border-gray-300 bg-[#0771B8] z-0">

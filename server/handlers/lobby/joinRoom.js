@@ -6,11 +6,13 @@ const { broadcastToRoom } = require("../../utils/broadcast");
 function joinRoomByPIN(data, uuid) {
   //first we get the data from the request (room PIN, room)
   const pin = data.pin;
+  const isValidPIN = /^\d{4}$/.test(pin);
+  if (!isValidPIN) return { success: false, error: "ERROR: Invalid PIN" };
   const room = rooms[pin];
 
   //confirm that the player can join the room
-  if (!room) return { success: false, error: "Room does not exist" };
-  if (rooms[pin].currentCapacity === 4) return { success: false, error: "Room is full" };
+  if (!room) return { success: false, error: "ERROR: Room does not exist" };
+  if (rooms[pin].currentCapacity === 4) return { success: false, error: "ERROR: Room is full" };
 
   //add player to room
   room.players.push(uuid);

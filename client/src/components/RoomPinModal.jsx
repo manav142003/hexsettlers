@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useSocket } from "../context/WebSocketContext";
 
-export default function RoomPinModal({ onComplete }) {
+export default function RoomPinModal({ onComplete, error }) {
   const [pin, setPin] = useState("");
   const { send } = useSocket();
 
@@ -43,6 +43,7 @@ export default function RoomPinModal({ onComplete }) {
                 if (/^\d{0,4}$/.test(value)) setPin(e.target.value);
               }}
             />
+            {error !== "" && <p className="text-red-500">{error}</p>}
             <div>
               {/* Number Pad */}
               <div className="grid grid-cols-3 gap-3 mb-4">

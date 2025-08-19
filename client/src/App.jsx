@@ -5,6 +5,7 @@ import GameScreen from "./screens/GameScreen";
 import "./components/Modal.css";
 import DisclaimerModal from "./components/DisclaimerModal";
 import Connect from "./screens/Connect";
+import { useSocket } from "./context/WebSocketContext";
 function App() {
   const [screen, setScreen] = useState("home");
   const [username, setUsername] = useState("");

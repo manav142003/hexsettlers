@@ -39,10 +39,11 @@ export default function Lobby({ roomPIN, players, setPlayers, setScreen, host })
         {[...Array(4)].map((_, i) => {
           const player = players[i];
           return (
-            <li key={i} className="p-5 border-3 rounded-xl border-gray-300 min-h-[170px]">
+            <li key={i} className={`p-5 border-3 rounded-xl border-gray-300 min-h-[170px] ${player ? (player.ready ? "border-green-400 bg-green-50" : "border-red-400 bg-red-50") : "border-gray-300 bg-white"}`}>
               {player ? (
                 <div className="flex flex-col justify-center">
                   <h2 className="text-center text-xl font-semibold">{player.username}</h2>
+                  {player.id === host && <p className="text-center">(Host)</p>}
                   <p className="text-center p-2">{player.ready ? "Ready" : "Not Ready"}</p>
                   {player.id === id && <button onClick={() => toggleReady(player.ready)}>{player.ready ? "Unready" : "Ready Up"}</button>}
                 </div>

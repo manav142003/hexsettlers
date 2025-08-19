@@ -15,6 +15,18 @@ const messageHandlers = require("./handlers");
 wsServer.on("connection", (connection, request) => {
   //get the username from the query string and generate a UUID for this client
   const { username } = url.parse(request.url, true).query;
+
+  if (!username || username.length > 8) {
+    connection.send(
+      JSON.stringify({
+        type: "error",
+        message: "ERROR: Username must be a maximum of 8 characters",
+      })
+    );
+    connection.close();
+    return;
+  }
+
   const uuid = uuidv4();
 
   //register the player
@@ -31,13 +43,13 @@ wsServer.on("connection", (connection, request) => {
       const handler = messageHandlers[data.type];
 
       //if there's no handler, return an error to the client
-      if (!handler) return connection.send(JSON.stringify({ type: "error", message: `Unknown message type: ${data.type}` }));
+      if (!handler) return connection.send(JSON.stringify({ type: "error", message: `ERROR: Unknown message type: ${data.type}` }));
 
       //otherwise, handle the message and return the result to the server
       const result = handler(data, uuid);
       if (result && result.sendBack != false) connection.send(JSON.stringify({ type: `${data.type}Result`, ...result }));
     } catch (err) {
-      connection.send(JSON.stringify({ type: "error", message: "Failed to process message", detail: err.message }));
+      connection.send(JSON.stringify({ type: "error", message: "ERROR: Failed to process message", detail: err.message }));
     }
   });
 

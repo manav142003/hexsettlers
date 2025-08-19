@@ -6,6 +6,7 @@ import RoomPinModal from "../components/RoomPinModal";
 export default function JoinRoom({ username, setMenu, setRoomPIN, setPlayers, setHost }) {
   const [input, setInput] = useState("");
   const { send, subscribe } = useSocket();
+  const [error, setError] = useState("");
   const [showRoomCodeInput, setShowRoomCodeInput] = useState(false);
 
   useEffect(() => {
@@ -16,7 +17,9 @@ export default function JoinRoom({ username, setMenu, setRoomPIN, setPlayers, se
         setPlayers(data.players);
         setHost(data.host);
         setMenu("lobby");
-      } else alert(data.error);
+      } else {
+        setError(data.error);
+      }
     };
 
     const unsubJoin = subscribe("joinRoomResult", handleRoomResult);
@@ -37,7 +40,7 @@ export default function JoinRoom({ username, setMenu, setRoomPIN, setPlayers, se
       <h2>Welcome, {username}!</h2>
       <button onClick={() => setShowRoomCodeInput(true)}>Join Room</button>
       <button onClick={() => createRoom()}>Create Room</button>
-      {showRoomCodeInput && <RoomPinModal onComplete={() => setShowRoomCodeInput(false)} />}
+      {showRoomCodeInput && <RoomPinModal onComplete={() => setShowRoomCodeInput(false)} error={error} />}
     </div>
   );
 }
