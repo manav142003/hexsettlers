@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useSocket } from "../context/WebSocketContext";
 import RoomPinModal from "../components/RoomPinModal";
 
-export default function JoinRoom({ username, setMenu, setRoomPIN, setPlayers, setHost }) {
+export default function JoinRoom({ username, setMenu, setRoomPIN }) {
   const [input, setInput] = useState("");
   const { send, subscribe } = useSocket();
   const [error, setError] = useState("");
@@ -14,8 +14,6 @@ export default function JoinRoom({ username, setMenu, setRoomPIN, setPlayers, se
     const handleRoomResult = (data) => {
       if (data.success) {
         setRoomPIN(data.pin);
-        setPlayers(data.players);
-        setHost(data.host);
         setMenu("lobby");
       } else {
         setError(data.error);

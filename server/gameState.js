@@ -1,6 +1,220 @@
-const { rooms, users, playerToRoom } = require("../../store");
-const { broadcastToRoom, broadcastToPlayer } = require("../../utils/broadcast");
-const { vertexToTiles, tileToVertices, adjacentVertices, roadSpots } = require("../../data/gameHelpers");
+const { rooms, users, playerToRoom } = require("./store");
+const { broadcastToRoom, broadcastToPlayer } = require("./broadcast");
+
+const adjacentVertices = {
+  //adjacency matrix for the vertices
+  0: [1, 5, 9],
+  1: [0, 2, 8],
+  2: [1, 3, 14],
+  3: [2, 4, 17],
+  4: [3, 5],
+  5: [0, 4],
+  6: [7, 9, 13],
+  7: [6, 8, 12],
+  8: [1, 7, 18],
+  9: [0, 6],
+  10: [11, 13],
+  11: [10, 12, 22],
+  12: [7, 11, 20],
+  13: [6, 10],
+  14: [2, 15, 19],
+  15: [14, 16, 25],
+  16: [15, 17, 28],
+  17: [3, 16],
+  18: [8, 19, 21],
+  19: [14, 18, 29],
+  20: [12, 21, 24],
+  21: [18, 20, 31],
+  22: [11, 23],
+  23: [22, 24, 35],
+  24: [20, 23, 33],
+  25: [15, 26, 30],
+  26: [25, 27, 40],
+  27: [26, 28],
+  28: [16, 27],
+  29: [19, 30, 32],
+  30: [25, 29, 38],
+  31: [21, 32, 34],
+  32: [29, 31, 41],
+  33: [24, 34, 37],
+  34: [31, 33, 43],
+  35: [23, 36],
+  36: [35, 37],
+  37: [33, 36, 45],
+  38: [30, 39, 42],
+  39: [38, 40, 49],
+  40: [26, 39],
+  41: [32, 42, 44],
+  42: [38, 41, 47],
+  43: [34, 44, 46],
+  44: [41, 43, 50],
+  45: [37, 46],
+  46: [43, 45, 52],
+  47: [42, 48, 51],
+  48: [47, 49],
+  49: [39, 48],
+  50: [44, 51, 53],
+  51: [47, 50],
+  52: [46, 53],
+  53: [50, 52],
+};
+
+const roadSpots = [
+  //all "from-to" road spots
+  [0, 1],
+  [0, 5],
+  [0, 9],
+  [1, 2],
+  [1, 8],
+  [2, 3],
+  [2, 14],
+  [3, 4],
+  [3, 17],
+  [4, 5],
+  [6, 7],
+  [6, 9],
+  [6, 13],
+  [7, 8],
+  [7, 12],
+  [8, 18],
+  [10, 11],
+  [10, 13],
+  [11, 12],
+  [11, 22],
+  [12, 20],
+  [14, 15],
+  [14, 19],
+  [15, 16],
+  [15, 25],
+  [16, 17],
+  [16, 28],
+  [18, 19],
+  [18, 21],
+  [19, 29],
+  [20, 21],
+  [20, 24],
+  [21, 31],
+  [22, 23],
+  [23, 24],
+  [23, 35],
+  [24, 33],
+  [25, 26],
+  [25, 30],
+  [26, 27],
+  [26, 40],
+  [27, 28],
+  [29, 30],
+  [29, 32],
+  [30, 38],
+  [31, 32],
+  [31, 34],
+  [32, 41],
+  [33, 34],
+  [33, 37],
+  [34, 43],
+  [35, 36],
+  [36, 37],
+  [37, 45],
+  [38, 39],
+  [38, 42],
+  [39, 40],
+  [39, 49],
+  [41, 42],
+  [41, 44],
+  [42, 47],
+  [43, 44],
+  [43, 46],
+  [44, 50],
+  [45, 46],
+  [46, 52],
+  [47, 48],
+  [47, 51],
+  [48, 49],
+  [50, 51],
+  [50, 53],
+  [52, 53],
+];
+
+const vertexToTiles = {
+  //map each vertex to the tiles that it is a part of
+  0: [0, 1],
+  1: [0, 1, 4],
+  2: [0, 3, 4],
+  3: [0, 3],
+  4: [0],
+  5: [0],
+  6: [1, 2],
+  7: [1, 2, 5],
+  8: [1, 4, 5],
+  9: [1],
+  10: [2],
+  11: [2, 6],
+  12: [2, 5, 6],
+  13: [2],
+  14: [3, 4, 8],
+  15: [3, 7, 8],
+  16: [3, 7],
+  17: [3],
+  18: [4, 5, 9],
+  19: [4, 8, 9],
+  20: [5, 6, 10],
+  21: [5, 9, 10],
+  22: [6],
+  23: [6, 11],
+  24: [6, 10, 11],
+  25: [7, 8, 12],
+  26: [7, 12],
+  27: [7],
+  28: [7],
+  29: [8, 9, 13],
+  30: [8, 12, 13],
+  31: [9, 10, 14],
+  32: [9, 13, 14],
+  33: [10, 11, 15],
+  34: [10, 14, 15],
+  35: [11],
+  36: [11],
+  37: [11, 15],
+  38: [12, 13, 16],
+  39: [12, 16],
+  40: [12],
+  41: [13, 14, 17],
+  42: [13, 16, 17],
+  43: [14, 15, 18],
+  44: [14, 17, 18],
+  45: [15],
+  46: [15, 18],
+  47: [16, 17],
+  48: [16],
+  49: [16],
+  50: [17, 18],
+  51: [17],
+  52: [18],
+  53: [18],
+};
+
+const tileToVertices = {
+  //map each tile to its vertices
+  0: [0, 1, 2, 3, 4, 5],
+  1: [0, 1, 6, 7, 8, 9],
+  2: [6, 7, 10, 11, 12, 13],
+  3: [2, 3, 14, 15, 16, 17],
+  4: [1, 2, 8, 14, 18, 19],
+  5: [7, 8, 12, 18, 20, 21],
+  6: [11, 12, 20, 22, 23, 24],
+  7: [15, 16, 25, 26, 27, 28],
+  8: [14, 15, 19, 25, 29, 30],
+  9: [18, 19, 21, 29, 31, 32],
+  10: [20, 21, 24, 31, 33, 34],
+  11: [23, 24, 33, 35, 36, 37],
+  12: [25, 26, 30, 38, 39, 40],
+  13: [29, 30, 32, 38, 41, 42],
+  14: [31, 32, 34, 41, 43, 44],
+  15: [33, 34, 37, 43, 45, 46],
+  16: [38, 39, 42, 47, 48, 49],
+  17: [41, 42, 44, 47, 50, 51],
+  18: [43, 44, 46, 50, 52, 53],
+};
 
 function createGameState(room) {
   const turnOrder = shuffle([...room.players]);
@@ -25,7 +239,7 @@ function createGameState(room) {
         id,
         {
           username: users[id]?.username, //player's name
-          resources: { wood: 0, brick: 0, wheat: 2, sheep: 2, ore: 2 }, //player's resources
+          resources: { wood: 2, brick: 2, wheat: 2, sheep: 2, ore: 2 }, //player's resources
           devCards: [], //player's development cards
           roads: [], //player's roads
           settlements: [], //player's settlements
@@ -108,17 +322,56 @@ function generateBoard() {
   });
   resources = shuffle(resources);
 
-  //shuffle the tile numbers (that correspond to the rarity of each resource)
+  //these tile numbers represent the frequency of the dice roll. "Tiles" will hold the full tile objects.
   const TILE_NUMBERS = [5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 4, 5, 6, 3, 11];
-  const numbers = shuffle([...TILE_NUMBERS]);
 
-  //now for all 19 tiles, we get their resource and number (skipping desert) then push a tile object onto the tile array
+  //these are the outer and inner tile IDs, not including the very middle one which is the last that will be placed
+  const outerTiles = [0, 1, 2, 6, 11, 15, 18, 17, 16, 12, 7, 3];
+  const innerTiles = [4, 5, 10, 14, 13, 8];
+
+  //map each outer starting index to each inner starting index
+  const outerToInnerMap = {
+    0: 0,
+    1: 0,
+    2: 1,
+    3: 1,
+    4: 2,
+    5: 2,
+    6: 3,
+    7: 3,
+    8: 4,
+    9: 4,
+    10: 5,
+    11: 5,
+  };
+
+  //first we choose a starting index from the outermost tiles, then rotate the arrays based on that starting position
+  const outerStartIndex = Math.floor(Math.random() * outerTiles.length);
+  const rotatedOuterTiles = outerTiles.slice(outerStartIndex).concat(outerTiles.slice(0, outerStartIndex));
+  const innerStartIndex = outerToInnerMap[outerStartIndex] || 0;
+  const rotatedInnerTiles = innerTiles.slice(innerStartIndex).concat(innerTiles.slice(0, innerStartIndex));
+
+  //flatten the arrays into one orderedTileIds array
+  const orderedTileIds = [...rotatedOuterTiles, ...rotatedInnerTiles, 9];
+
+  //this helper function gets the next tile number, skipping the desert
+  let index = 0;
+  const nextNumber = (type) => {
+    if (type === "desert") return 7;
+    const n = TILE_NUMBERS[index];
+    index++;
+    return n;
+  };
+
   const tiles = [];
-  for (let i = 0; i < 19; i++) {
+  for (let i = 0; i < orderedTileIds.length; i++) {
+    const id = orderedTileIds[i];
     const type = resources[i];
-    const number = type === "desert" ? 7 : numbers.pop();
-    tiles.push({ id: i, type, number, hasRobber: type === "desert", vertices: tileToVertices[i] });
+    const number = nextNumber(type);
+    tiles.push({ id, type, number, hasRobber: type === "desert", vertices: tileToVertices[id] });
   }
+
+  tiles.sort((a, b) => a.id - b.id);
 
   //generate the 9 ports and the vertices they are attached to
   const ports = [
@@ -148,11 +401,11 @@ function generateBoard() {
 function generateDevCards() {
   //generate a deck of 25 development cards
   const deck = [];
-  for (let i = 0; i < 14; i++) deck.push("knight");
-  for (let i = 0; i < 5; i++) deck.push("victoryPoint");
-  for (let i = 0; i < 2; i++) deck.push("roadBuilding");
-  for (let i = 0; i < 2; i++) deck.push("monopoly");
-  for (let i = 0; i < 2; i++) deck.push("yearOfPlenty");
+  for (let i = 0; i < 14; i++) deck.push("Knight");
+  for (let i = 0; i < 5; i++) deck.push("Victory Point");
+  for (let i = 0; i < 2; i++) deck.push("Road Building");
+  for (let i = 0; i < 2; i++) deck.push("Monopoly");
+  for (let i = 0; i < 2; i++) deck.push("Year of Plenty");
   return deck;
 }
 
@@ -334,12 +587,11 @@ function purchaseDevCard(data, uuid) {
   const devCard = { type: cardType, locked: true, played: false };
   player.devCards.push(devCard);
 
-  //let the room know that the player drew a dev card
-  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} purchased a development card`, uuid });
-  broadcastGameState(gameState);
-
-  //let the player know what dev card they drew, then update their possible actions
-  broadcastToPlayer(uuid, { type: "devCard", devCard });
+  //let players know that a dev card was purchased, let the current player know the type of dev card they got.
+  for (const playerId in gameState.players) {
+    if (playerId === uuid) broadcastToPlayer(uuid, { type: "promptMessage", message: `You purchased a ${devCard.type} card`, uuid });
+    else broadcastToPlayer(playerId, { type: "logMessage", message: `${player.username} purchased a development card`, uuid });
+  }
   nextAction(uuid);
 }
 
@@ -414,17 +666,17 @@ function playDevCard(data, uuid) {
 
   //proceed based on the type of dev card played (victory point cards excluded since they are not 'played')
   switch (type) {
-    case "roadBuilding": //create roadbuilding state then prompt player to place first road
+    case "Road Building": //create roadbuilding state then prompt player to place first road
       gameState.roadBuilding = { player: uuid, roadsPlaced: 0, inProgress: true };
       promptRoadPlacement(null, uuid);
       break;
-    case "monopoly": //prompt user to select resource for monopoly
+    case "Monopoly": //prompt user to select resource for monopoly
       broadcastToPlayer(uuid, { type: "monopolyPrompt" });
       break;
-    case "yearOfPlenty": //prompt user to select two resources to acquire
+    case "Year of Plenty": //prompt user to select two resources to acquire
       broadcastToPlayer(uuid, { type: "yearOfPlentyPrompt" });
       break;
-    case "knight": //increment the player's army count, check who has the largest army, then prompt the player to place the robber
+    case "Knight": //increment the player's army count, check who has the largest army, then prompt the player to place the robber
       promptRobberPlacement(uuid);
       break;
   }
@@ -490,17 +742,19 @@ function getVictoryPoints(uuid) {
   //calculate a single player's victory points
   const { gameState, player } = getContext(uuid);
 
-  let points = 0;
+  let points = 7;
 
   //1 point per settlement, 2 points per city
   points += player.settlements.length;
   points += player.cities.length * 2;
 
   //1 point for each victory point dev card
-  const devCardPoints = player.devCards.filter((card) => card.type === "victoryPoint");
+  const devCardPoints = player.devCards.filter((card) => card.type === "Victory Point");
   points += devCardPoints.length;
 
   //2 points for largest army or longest road
+  gameState.largestArmy = determineLargestArmy(uuid);
+  gameState.longestRoad = determineLongestRoad(uuid);
   if (gameState.longestRoad === uuid) points += 2;
   if (gameState.largestArmy === uuid) points += 2;
 
@@ -511,12 +765,7 @@ function nextAction(uuid) {
   const { gameState } = getContext(uuid);
 
   //after each action, check players' longest road/largest army counts/victory points, and determine a winner if necessary
-  for (const [playerId, player] of Object.entries(gameState.players)) {
-    player.longestRoadCount = getLongestRoadLength(playerId);
-    player.armyCount = player.devCards.filter((card) => card.type === "knight" && card.played).length;
-    player.victoryPoints = getVictoryPoints(playerId);
-    if (player.victoryPoints >= 10) endGame(playerId);
-  }
+  calculateStats(gameState);
 
   //update the game state with all this new info
   gameState.action = "selectAction";
@@ -528,7 +777,18 @@ function nextAction(uuid) {
 }
 
 function endGame(winner) {
-  //finish later
+  //broadcast to the room when the game is over
+  const { gameState, pin, player } = getContext(winner);
+  broadcastToRoom(pin, { type: "gameOver", winner: player, winnerId: winner });
+}
+
+function calculateStats(gameState) {
+  for (const [playerId, player] of Object.entries(gameState.players)) {
+    player.longestRoadCount = getLongestRoadLength(playerId);
+    player.armyCount = player.devCards.filter((card) => card.type === "Knight" && card.played).length;
+    player.victoryPoints = getVictoryPoints(playerId);
+    if (player.victoryPoints >= 10) endGame(playerId);
+  }
 }
 
 function nextTurn(data, uuid) {
@@ -536,6 +796,9 @@ function nextTurn(data, uuid) {
   const { pin, gameState, player } = getContext(uuid);
 
   if (gameState.action === "robber") return;
+
+  //after each turn, we recalculate each player's stats (resource counts, army count, etc.)
+  calculateStats(gameState);
 
   //unlock the player's development cards so they can be used next turn
   for (const devCard of player.devCards) devCard.locked = false;
@@ -615,7 +878,7 @@ function determineLargestArmy(uuid) {
 
   for (const [playerId, player] of Object.entries(gameState.players)) {
     //count each 'played' knight card
-    const armySize = player.devCards.filter((card) => card.type === "knight" && card.played).length;
+    const armySize = player.devCards.filter((card) => card.type === "Knight" && card.played).length;
     if (armySize > largestArmy) {
       largestArmy = armySize;
       potentialHolder = player;

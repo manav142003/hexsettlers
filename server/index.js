@@ -2,6 +2,7 @@ const http = require("http"); //creates a basic HTTP server
 const { WebSocketServer } = require("ws"); //websocket library
 const url = require("url"); //used to parse URL and extract query parameters
 const uuidv4 = require("uuid").v4; //used to create unique IDs for connected clients
+const { leaveRoom } = require("./lobby");
 
 //create base HTTP server with WebSocket server layered on top
 const server = http.createServer();
@@ -10,7 +11,11 @@ const port = 8000;
 
 //connections stores active WebSocket connections by UUID, users stores user metadata by UUID
 const { connections, users, playerToRoom, rooms } = require("./store");
-const messageHandlers = require("./handlers");
+const messageHandlers = {
+  ...require("./lobby"),
+  ...require("./broadcast"),
+  ...require("./gameState"),
+};
 
 wsServer.on("connection", (connection, request) => {
   //get the username from the query string and generate a UUID for this client
@@ -55,9 +60,12 @@ wsServer.on("connection", (connection, request) => {
 
   //disconnect handler; removes player from room and server
   connection.on("close", () => {
-    console.log(`${users[uuid]?.username || "Unknown User"} disconnected`);
+    console.log(`${users[uuid]?.username || "Unknown User"} disconnected from the server`);
     const pin = playerToRoom[uuid];
-    if (pin && rooms[pin]) rooms[pin].players = rooms[pin].players.filter((id) => id !== uuid);
+    if (!pin) return;
+
+    leaveRoom(null, uuid);
+
     delete playerToRoom[uuid];
     delete users[uuid];
     delete connections[uuid];
@@ -66,5 +74,5 @@ wsServer.on("connection", (connection, request) => {
 
 //start the server on the specified port
 server.listen(port, () => {
-  console.log(`Catan server is running on port ${port}.`);
+  console.log(`Hex Settlers server is running on port ${port}.`);
 });

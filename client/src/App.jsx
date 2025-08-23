@@ -10,8 +10,6 @@ function App() {
   const [screen, setScreen] = useState("home");
   const [username, setUsername] = useState("");
   const [roomPIN, setRoomPIN] = useState(null);
-  const [players, setPlayers] = useState([]);
-  const [host, setHost] = useState(null);
   const [menu, setMenu] = useState("connect");
   const [showDisclaimer, setShowDisclaimer] = useState(false);
 
@@ -27,8 +25,8 @@ function App() {
           {/* main content: enter username, join/create room, lobby */}
           <main className="row-start-2 flex justify-center">
             {menu === "connect" && <Connect setUsername={setUsername} setMenu={setMenu} />}
-            {menu === "roomOptions" && <JoinRoom username={username} setMenu={setMenu} setRoomPIN={setRoomPIN} setPlayers={setPlayers} setHost={setHost} />}
-            {menu === "lobby" && <Lobby roomPIN={roomPIN} players={players} setPlayers={setPlayers} setScreen={setScreen} host={host} />}
+            {menu === "roomOptions" && <JoinRoom username={username} setMenu={setMenu} setRoomPIN={setRoomPIN} />}
+            {menu === "lobby" && <Lobby roomPIN={roomPIN} setScreen={setScreen} setMenu={setMenu} />}
           </main>
 
           {/* footer: disclaimer */}
@@ -41,7 +39,7 @@ function App() {
         </div>
       )}
 
-      {screen === "game" && <GameScreen players={players} />}
+      {screen === "game" && <GameScreen setMenu={setMenu} setScreen={setScreen} />}
     </div>
     // <>
     //   {screen === "home" && <Home username={username} setUsername={setUsername} setScreen={setScreen} roomPIN={roomPIN} setRoomPIN={setRoomPIN} setPlayers={setPlayers} setHost={setHost} />}

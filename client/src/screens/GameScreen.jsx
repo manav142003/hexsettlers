@@ -11,8 +11,10 @@ import PlayerColourProvider from "../context/PlayerColourProvider";
 import { colourPalette } from "../utils/colours";
 import StealMenu from "../components/StealMenu";
 import ServerLogToast from "../components/ServerLogToast";
+import GameOverModal from "../components/GameOverModal";
+import GameAbortedModal from "../components/GameAbortedModal";
 
-export default function GameScreen() {
+export default function GameScreen({ setMenu, setScreen }) {
   const { send, subscribe, id } = useSocket();
   const [gameState, setGameState] = useState(null); //sets the current game state
   const [discardData, setDiscardData] = useState(null); //sets discard data (discard count, what resources you have, etc)
@@ -23,6 +25,9 @@ export default function GameScreen() {
   const [trade, setTrade] = useState(false); //toggles the trade screen when an opponent proposes a trade
   const [steal, setSteal] = useState(false); //toggles the stealing screen when a player moves the robber and attempts to steal from opponent
   const [stealData, setStealData] = useState(null);
+  const [winnerData, setWinnerData] = useState(null);
+  const [gameAborted, setGameAborted] = useState(null);
+  const [abortedBy, setAbortedBy] = useState(null);
 
   useEffect(() => send({ type: "getGameState" }), []); //request the game state from the server
 
@@ -55,8 +60,26 @@ export default function GameScreen() {
     });
 
     const unsubStealPrompt = subscribe("stealPrompt", (data) => {
+      //show the steal menu modal
       setStealData(data);
       setSteal((prev) => !prev);
+    });
+
+    const unsubGameAborted = subscribe("gameAborted", (data) => {
+      //if someone disconnects, show modal saying that the game was disconnected
+      setGameAborted(true);
+      setAbortedBy(data.username);
+    });
+
+    const unsubGameOver = subscribe("gameOver", (data) => {
+      //show game over modal
+      setWinnerData(data);
+    });
+
+    const unsubReturnToLobby = subscribe("returnToLobby", (data) => {
+      //after clicking "good game" when someone wins, return to lobby screen
+      setMenu("lobby");
+      setScreen("home");
     });
 
     return () => {
@@ -67,6 +90,9 @@ export default function GameScreen() {
       unsubTradePrompt();
       unsubTradeComplete();
       unsubStealPrompt();
+      unsubGameOver();
+      unsubGameAborted();
+      unsubReturnToLobby();
     };
   }, [subscribe, send, id]);
 
@@ -80,6 +106,13 @@ export default function GameScreen() {
   const closeSteal = () => {
     setStealData(null);
     setSteal(!steal);
+  };
+
+  const closeGameAborted = () => {
+    setGameAborted(false);
+    setAbortedBy(null);
+    setMenu("lobby");
+    setScreen("home");
   };
 
   const isYourTurn = id === gameState.turnOrder[gameState.turn];
@@ -110,6 +143,8 @@ export default function GameScreen() {
         {yearOfPlenty && <YearOfPlentyMenu onComplete={() => setYearOfPlenty(false)} />}
         {trade && <TradeMenu mode="respond" tradeData={tradeData} playerResources={gameState.players[id].resources} onComplete={() => setTrade(false)} />}
         {steal && <StealMenu stealData={stealData} onComplete={closeSteal} />}
+        {winnerData && <GameOverModal winnerData={winnerData} />}
+        {gameAborted && <GameAbortedModal username={abortedBy} onClose={closeGameAborted} />}
       </div>
     </PlayerColourProvider>
   );

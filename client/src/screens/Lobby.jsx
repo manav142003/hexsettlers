@@ -2,22 +2,38 @@
 import { useEffect, useState } from "react";
 import { useSocket } from "../context/WebSocketContext";
 
-export default function Lobby({ roomPIN, players, setPlayers, setScreen, host }) {
+export default function Lobby({ roomPIN, setScreen, setMenu }) {
   const { send, subscribe, id } = useSocket();
+  const [players, setPlayers] = useState([]);
+  const [host, setHost] = useState(null);
+
+  useEffect(() => send({ type: "updatePlayerList", pin: roomPIN }), []); //request the game state from the server
 
   useEffect(() => {
     //we must listen to playerListUpdates and initializeGame messages from the server.
     const unsubPlayerListUpdate = subscribe("playerListUpdate", (data) => {
       setPlayers(data.players);
+      const hostPlayer = data.players.find((player) => player.isHost);
+      if (hostPlayer) setHost(hostPlayer.id);
     });
 
     const unsubInitializeGame = subscribe("initializeGame", () => {
       setScreen("game");
     });
 
+    const unsubPlayerLeft = subscribe("playerLeft", ({ uuid }) => {
+      setPlayers((prevPlayers) => prevPlayers.filter((p) => p.id !== uuid));
+    });
+
+    const unsubLeaveRoom = subscribe("leaveRoomResult", () => {
+      setMenu("roomOptions");
+    });
+
     return () => {
       unsubPlayerListUpdate();
       unsubInitializeGame();
+      unsubPlayerLeft();
+      unsubLeaveRoom();
     };
   }, []);
 
@@ -62,6 +78,7 @@ export default function Lobby({ roomPIN, players, setPlayers, setScreen, host })
         ) : (
           <p className="text-center">Please wait for the host to start the game.</p>
         )}
+        <button onClick={() => send({ type: "leaveRoom" })}>Leave Room</button>
       </div>
     </div>
   );
