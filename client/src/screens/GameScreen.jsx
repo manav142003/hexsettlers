@@ -13,6 +13,7 @@ import StealMenu from "../components/StealMenu";
 import ServerLogToast from "../components/ServerLogToast";
 import GameOverModal from "../components/GameOverModal";
 import GameAbortedModal from "../components/GameAbortedModal";
+import { DifferencesProvider } from "../context/DifferencesContext";
 
 export default function GameScreen({ setMenu, setScreen }) {
   const { send, subscribe, id } = useSocket();
@@ -133,7 +134,9 @@ export default function GameScreen({ setMenu, setScreen }) {
           </div>
 
           <div>
-            <PlayerInfo players={gameState.players} currentPlayerId={gameState.turnOrder[gameState.turn]} turnOrder={gameState.turnOrder} resources={gameState.players[id].resources} />
+            <DifferencesProvider>
+              <PlayerInfo players={gameState.players} currentPlayerId={gameState.turnOrder[gameState.turn]} turnOrder={gameState.turnOrder} resources={gameState.players[id].resources} />
+            </DifferencesProvider>
           </div>
         </div>
 

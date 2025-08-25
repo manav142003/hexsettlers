@@ -239,14 +239,16 @@ function createGameState(room) {
         id,
         {
           username: users[id]?.username, //player's name
-          resources: { wood: 2, brick: 2, wheat: 2, sheep: 2, ore: 2 }, //player's resources
+          resources: { wood: 0, brick: 0, wheat: 0, sheep: 0, ore: 0 }, //player's resources
           devCards: [], //player's development cards
+          unplayedDevCards: 0,
           roads: [], //player's roads
           settlements: [], //player's settlements
           cities: [], //player's cities
           victoryPoints: 0, //player's victory points
           longestRoadCount: 0, //the size of the player's longest road
           armyCount: 0, //the size of the player's largest army
+          statDifferences: { wood: 0, brick: 0, wheat: 0, ore: 0, sheep: 0, victoryPoints: 0, devCardCount: 0, armyCount: 0, longestRoadCount: 0, resourceCount: 0 },
         },
       ])
     ),
@@ -295,7 +297,7 @@ function getClientGameState(gameState, uuid) {
       victoryPoints: player.victoryPoints,
       longestRoadCount: player.longestRoadCount,
       armyCount: player.armyCount,
-      devCardCount: player.devCards.length,
+      devCardCount: player.unplayedDevCards,
       ...(id === uuid
         ? {
             resources: player.resources,
@@ -524,11 +526,12 @@ function discardResources(data, uuid) {
     if ((player.resources[type] || 0) < amount) return;
   }
 
-  //loop through selected resources, remove them from the player's hand and put them back in the bank
+  //apply the discard: player loses, bank gains
+  const negativeChanges = {};
   for (const [type, amount] of Object.entries(discardedResources)) {
-    player.resources[type] -= amount;
-    gameState.bank[type] = (gameState.bank[type] || 0) + amount;
+    negativeChanges[type] = -amount;
   }
+  applyResourceChanges(gameState.bank, player, negativeChanges);
 
   //remove player from pending discards
   gameState.robber.discardsPending = gameState.robber.discardsPending.filter((id) => id !== uuid);
@@ -559,8 +562,8 @@ function steal(data, uuid) {
 
   //remove the resource from the victim's hand, add it to the stealer's hand
   const [resource] = available[Math.floor(Math.random() * available.length)];
-  victim.resources[resource] -= 1;
-  player.resources[resource] = (player.resources[resource] || 0) + 1;
+  applyResourceChanges(null, victim, { [resource]: -1 });
+  applyResourceChanges(null, player, { [resource]: +1 });
 
   //update game state and send player what they stole
   broadcastToRoom(pin, { type: "logMessage", message: `${player.username} stole a resource from ${victim.username}`, uuid });
@@ -581,11 +584,17 @@ function purchaseDevCard(data, uuid) {
   if (uuid !== gameState.turnOrder[gameState.turn]) return;
 
   //charge the player for the development card, pop it from the deck, and lock it (since they cannot play it the same turn they bought it)
-  chargePlayer(player, { wheat: 1, ore: 1, sheep: 1 });
+  applyResourceChanges(gameState.bank, player, { wheat: -1, ore: -1, sheep: -1 });
   const index = Math.floor(Math.random() * gameState.devCards.length);
   const [cardType] = gameState.devCards.splice(index, 1);
   const devCard = { type: cardType, locked: true, played: false };
-  player.devCards.push(devCard);
+
+  //victory point cards get played immediately. If the card is something else, add to the player's deck
+  if (cardType !== "Victory Point") {
+    player.unplayedDevCards = (player.unplayedDevCards || 0) + 1;
+    player.devCards.push(devCard);
+    player.statDifferences.devCardCount = (player.statDifferences.devCardCount || 0) + 1;
+  }
 
   //let players know that a dev card was purchased, let the current player know the type of dev card they got.
   for (const playerId in gameState.players) {
@@ -626,21 +635,15 @@ function dealResources(tileNum, gameState) {
       //...for each of their settlements...
       for (const settlement of player.settlements) {
         //if their settlements are on one of the tile's vertices, then increase their resource count for that tile's resource
-        if (vertices.includes(settlement) && (gameState.bank[type] || 0) >= 1) {
-          player.resources[type] = (player.resources[type] || 0) + 1;
-          gameState.bank[type] -= 1;
-        }
+        if (vertices.includes(settlement) && (gameState.bank[type] || 0) >= 1) applyResourceChanges(gameState.bank, player, { [type]: 1 });
       }
 
       //do the same for cities, but add 2 of the resource instead
       for (const city of player.cities) {
         if (vertices.includes(city) && (gameState.bank[type] || 0) >= 2) {
-          player.resources[type] = (player.resources[type] || 0) + 2;
-          gameState.bank[type] -= 2;
+          applyResourceChanges(gameState.bank, player, { [type]: 2 });
         } else if (vertices.includes(city) && (gameState.bank[type] || 0) >= 1) {
-          //if bank only has 1 left, give 1 instead of 2
-          player.resources[type] = (player.resources[type] || 0) + 1;
-          gameState.bank[type] -= 1;
+          applyResourceChanges(gameState.bank, player, { [type]: 1 });
         }
       }
     }
@@ -664,6 +667,12 @@ function playDevCard(data, uuid) {
   card.played = true;
   for (const devCard of player.devCards) devCard.locked = true;
 
+  //decrement unplayed count if not a VP card
+  if (type !== "Victory Point") {
+    player.unplayedDevCards = Math.max(0, (player.unplayedDevCards || 0) - 1);
+    player.statDifferences.devCardCount = (player.statDifferences.devCardCount || 0) - 1;
+  }
+
   //proceed based on the type of dev card played (victory point cards excluded since they are not 'played')
   switch (type) {
     case "Road Building": //create roadbuilding state then prompt player to place first road
@@ -677,6 +686,7 @@ function playDevCard(data, uuid) {
       broadcastToPlayer(uuid, { type: "yearOfPlentyPrompt" });
       break;
     case "Knight": //increment the player's army count, check who has the largest army, then prompt the player to place the robber
+      player.statDifferences.army = 1;
       promptRobberPlacement(uuid);
       break;
   }
@@ -698,12 +708,12 @@ function monopoly(data, uuid) {
     const amount = opponent.resources[resource] || 0;
     if (amount > 0) {
       totalStolen += amount;
-      opponent.resources[resource] = 0;
+      applyResourceChanges(null, opponent, { [resource]: -amount });
     }
   }
 
   //give all collected resources to current player
-  player.resources[resource] = (player.resources[resource] || 0) + totalStolen;
+  if (totalStolen > 0) applyResourceChanges(null, player, { [resource]: totalStolen });
 
   //update the game state
   broadcastToRoom(pin, { type: "logMessage", message: `${player.username} called monopoly, gained ${totalStolen} ${resource}`, uuid });
@@ -723,7 +733,7 @@ function yearOfPlenty(data, uuid) {
   const validResources = ["wood", "brick", "sheep", "wheat", "ore"];
   for (const resource of resources) {
     if (!validResources.includes(resource)) return;
-    player.resources[resource] = (player.resources[resources] || 0) + 1;
+    applyResourceChanges(gameState.bank, player, { [resource]: 1 });
   }
 
   //format the log message to look nice
@@ -738,19 +748,18 @@ function yearOfPlenty(data, uuid) {
   broadcastGameState(gameState);
 }
 
-function getVictoryPoints(uuid) {
+function updateVictoryPoints(uuid) {
   //calculate a single player's victory points
   const { gameState, player } = getContext(uuid);
 
-  let points = 7;
+  const prev = player.victoryPoints || 0;
 
-  //1 point per settlement, 2 points per city
+  let points = 0;
+
+  //1 point per settlement, 2 points per city, 1 point per victory point dev card
   points += player.settlements.length;
   points += player.cities.length * 2;
-
-  //1 point for each victory point dev card
-  const devCardPoints = player.devCards.filter((card) => card.type === "Victory Point");
-  points += devCardPoints.length;
+  points += player.devCards.filter((card) => card.type === "Victory Point").length;
 
   //2 points for largest army or longest road
   gameState.largestArmy = determineLargestArmy(uuid);
@@ -758,14 +767,18 @@ function getVictoryPoints(uuid) {
   if (gameState.longestRoad === uuid) points += 2;
   if (gameState.largestArmy === uuid) points += 2;
 
-  return points;
+  //calculate the difference in victory points
+  const difference = points - prev;
+  player.statDifferences.victoryPoints = (player.statDifferences.victoryPoints || 0) + difference;
+
+  player.victoryPoints = points;
 }
 
 function nextAction(uuid) {
-  const { gameState } = getContext(uuid);
+  const { gameState, pin } = getContext(uuid);
 
   //after each action, check players' longest road/largest army counts/victory points, and determine a winner if necessary
-  calculateStats(gameState);
+  calculateStats(gameState, pin);
 
   //update the game state with all this new info
   gameState.action = "selectAction";
@@ -776,19 +789,52 @@ function nextAction(uuid) {
   broadcastToPlayer(uuid, { type: "selectAction", possibleActions });
 }
 
+function sendStatDifferences(gameState, pin) {
+  //calculate each player's differences in stats for the animation
+  const differences = {};
+  for (const [playerId, player] of Object.entries(gameState.players)) {
+    differences[playerId] = { ...player.statDifferences };
+  }
+  broadcastToRoom(pin, { type: "statDifferences", differences, eventId: Date.now() });
+
+  setTimeout(() => {
+    for (const player of Object.values(gameState.players)) {
+      player.statDifferences = {
+        wood: 0,
+        brick: 0,
+        wheat: 0,
+        ore: 0,
+        sheep: 0,
+        victoryPoints: 0,
+        devCardCount: 0,
+        armyCount: 0,
+        longestRoadCount: 0,
+        resourceCount: 0,
+      };
+    }
+  }, 50);
+}
+
 function endGame(winner) {
   //broadcast to the room when the game is over
   const { gameState, pin, player } = getContext(winner);
   broadcastToRoom(pin, { type: "gameOver", winner: player, winnerId: winner });
 }
 
-function calculateStats(gameState) {
+function calculateStats(gameState, pin) {
   for (const [playerId, player] of Object.entries(gameState.players)) {
+    //determine longest road for player and get the difference from last turn/move
+    const prevLongestRoad = player.longestRoadCount || 0;
     player.longestRoadCount = getLongestRoadLength(playerId);
+    const longestRoadDiff = player.longestRoadCount - prevLongestRoad;
+    player.statDifferences.longestRoadCount = (player.statDifferences.longestRoadCount || 0) + longestRoadDiff;
+
+    //update army count and victory points, end game if necessary
     player.armyCount = player.devCards.filter((card) => card.type === "Knight" && card.played).length;
-    player.victoryPoints = getVictoryPoints(playerId);
+    updateVictoryPoints(playerId);
     if (player.victoryPoints >= 10) endGame(playerId);
   }
+  sendStatDifferences(gameState, pin);
 }
 
 function nextTurn(data, uuid) {
@@ -797,8 +843,8 @@ function nextTurn(data, uuid) {
 
   if (gameState.action === "robber") return;
 
-  //after each turn, we recalculate each player's stats (resource counts, army count, etc.)
-  calculateStats(gameState);
+  //after each turn, we recalculate each player's stats (resource counts, army count, etc.) and send the differences
+  calculateStats(gameState, pin);
 
   //unlock the player's development cards so they can be used next turn
   for (const devCard of player.devCards) devCard.locked = false;
@@ -812,7 +858,7 @@ function nextTurn(data, uuid) {
 
     //if we have completed all placement steps, we can now start the playing phase
     if (gameState.placementStep >= numPlayers * 2) {
-      startPlayingPhase(gameState);
+      startPlayingPhase(gameState, pin);
     } else {
       //get next player, keeping in mind the snake-order. Update the game state for all players then prompt next player
       const step = gameState.placementStep;
@@ -830,7 +876,7 @@ function nextTurn(data, uuid) {
   broadcastGameState(gameState);
 }
 
-function startPlayingPhase(gameState) {
+function startPlayingPhase(gameState, pin) {
   //first, we deal each player their starting resources (using their last placed settlement)
   for (const uuid of gameState.turnOrder) {
     const player = gameState.players[uuid];
@@ -842,12 +888,11 @@ function startPlayingPhase(gameState) {
     //for each of those tiles, deal the player a resource card of that type
     tileIds.forEach((tileId) => {
       const tile = gameState.board.tiles[tileId];
-      if (tile.type !== "desert") {
-        player.resources[tile.type]++;
-        gameState.bank[tile.type]--;
-      }
+      if (tile.type !== "desert") applyResourceChanges(gameState.bank, player, { [tile.type]: 1 });
     });
   }
+
+  sendStatDifferences(gameState, pin);
 
   //transition from the setup phase to the playing phase, and get next player's turn
   gameState.phase = "playing";
@@ -863,10 +908,19 @@ function canAfford(player, cost) {
   return true;
 }
 
-function chargePlayer(player, cost) {
-  //charge a player a specified cost of resources
-  for (let resource in cost) {
-    player.resources[resource] -= cost[resource];
+function applyResourceChanges(bank = null, player, changes) {
+  for (const resource in changes) {
+    const delta = changes[resource];
+
+    //update the player's resources and make sure to keep track of the change
+    player.resources[resource] = (player.resources[resource] || 0) + delta;
+    player.statDifferences[resource] = (player.statDifferences[resource] || 0) + delta;
+
+    //track the total resource count change
+    player.statDifferences.resourceCount = (player.statDifferences.resourceCount || 0) + delta;
+
+    //make sure to do the opposite for the bank
+    if (bank) bank[resource] = (bank[resource] || 0) - delta;
   }
 }
 
@@ -1017,10 +1071,10 @@ function bankTrade(data, uuid) {
 
   //decrement "give" resource from the player and give to bank. decrement "receive" resource from the bank and give to player.
   const [giveResource, giveAmount] = Object.entries(give)[0];
-  player.resources[giveResource] -= giveAmount;
-  player.resources[receive] = (player.resources[receive] || 0) + 1;
-  gameState.bank[giveResource] = (gameState.bank[giveResource] || 0) + giveAmount;
-  gameState.bank[receive] -= 1;
+
+  //apply the resource exchange
+  applyResourceChanges(gameState.bank, player, { [giveResource]: -giveAmount });
+  applyResourceChanges(gameState.bank, player, { [receive]: 1 });
 
   //update the game state and let player continue their turn
   broadcastToRoom(pin, { type: "logMessage", message: `${player.username} traded ${giveAmount} ${giveResource} to the bank for 1 ${receive}`, uuid });
@@ -1040,9 +1094,8 @@ function placeSettlement(data, uuid) {
 
   //confirm that the player has the appropriate resources for the settlement, and deduct
   if (gameState.phase === "playing") {
-    const cost = { wood: 1, brick: 1, wheat: 1, sheep: 1 };
-    if (!canAfford(player, cost)) return { success: false, error: "cannotAfford" };
-    chargePlayer(player, cost);
+    if (!canAfford(player, { wood: 1, brick: 1, wheat: 1, sheep: 1 })) return { success: false, error: "cannotAfford" };
+    applyResourceChanges(gameState.bank, player, { wood: -1, brick: -1, wheat: -1, sheep: -1 });
   }
 
   //update the game state with the newly added settlement
@@ -1107,7 +1160,7 @@ function placeCity(data, uuid) {
   if (!canAfford(player, { ore: 3, wheat: 2 })) return;
 
   //switch to city by removing the player's settlement and adding it to their city list, then charge the player
-  chargePlayer(player, { ore: 3, wheat: 2 });
+  applyResourceChanges(gameState.bank, player, { ore: -3, wheat: -2 });
   player.settlements = player.settlements.filter((vertex) => vertex !== location);
   player.cities.push(location);
 
@@ -1148,9 +1201,8 @@ function placeRoad(data, uuid) {
 
   //confirm that the player has the appropriate resources, and charge them (unless in road building where roads are free)
   if (gameState.phase === "playing" && !gameState.roadBuilding?.inProgress) {
-    const cost = { wood: 1, brick: 1 };
-    if (!canAfford(player, cost)) return { success: false, error: "cannotAfford" };
-    chargePlayer(player, cost);
+    if (!canAfford(player, { wood: 1, brick: 1 })) return { success: false, error: "cannotAfford" };
+    applyResourceChanges(gameState.bank, player, { wood: -1, brick: -1 });
   }
 
   //now add the road to the player's list of roads, and add its key to taken edges set
@@ -1303,6 +1355,7 @@ function getLongestRoadLength(uuid) {
     const length = depthFirstSearch(startingVertex, null, graph, visitedRoads, opponentVertices);
     maxLength = Math.max(maxLength, length);
   }
+
   return maxLength;
 }
 
@@ -1369,16 +1422,16 @@ function acceptTrade(data, uuid) {
     return;
   }
 
-  //remove resources from offering player's hand and give them to the accepting player
+  //offeringPlayer gives "offer" resources and acceptingPlayer gains them
   for (const [resource, amount] of Object.entries(offer)) {
-    offeringPlayer.resources[resource] -= amount;
-    acceptingPlayer.resources[resource] = (acceptingPlayer.resources[resource] || 0) + amount;
+    applyResourceChanges(null, offeringPlayer, { [resource]: -amount }, null);
+    applyResourceChanges(null, acceptingPlayer, { [resource]: +amount }, null);
   }
 
-  //remove resources from accepting player's hand and give them to the offering player
+  //acceptingPlayer gives "request" resources and offeringPlayer gains them
   for (const [resource, amount] of Object.entries(request)) {
-    acceptingPlayer.resources[resource] -= amount;
-    offeringPlayer.resources[resource] = (offeringPlayer.resources[resource] || 0) + amount;
+    applyResourceChanges(null, acceptingPlayer, { [resource]: -amount }, null);
+    applyResourceChanges(null, offeringPlayer, { [resource]: +amount }, null);
   }
 
   //update the changes to the room
