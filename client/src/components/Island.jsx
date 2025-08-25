@@ -4,6 +4,34 @@ import { useMemo } from "react";
 import { getHexVertices } from "./HexTile";
 import edgeKey from "../utils/edgeKey";
 
+function dockVector(angle) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  return {
+    x: Math.cos(toRad(angle)).toFixed(3),
+    y: -Math.sin(toRad(angle)).toFixed(3),
+  };
+}
+
+function rayIntersection(p1, angle1, p2, angle2) {
+  //function to find where two rays (ie. docks) meet. p1/p2 are starting points, angle1/angle2 are the angles
+  //convert degrees to radians
+  const toRad = (deg) => (deg * Math.PI) / 180;
+
+  //r and s are vectors for each ray/dock
+  const r = { x: Math.cos(toRad(angle1)), y: Math.sin(toRad(angle1)) };
+  const s = { x: Math.cos(toRad(angle2)), y: Math.sin(toRad(angle2)) };
+
+  const cross = (a, b) => a.x * b.y - a.y * b.x;
+
+  const qmp = { x: p2.x - p1.x, y: p2.y - p1.y };
+  const rxs = cross(r, s);
+
+  const t = cross(qmp, s) / rxs;
+  const u = cross(qmp, r) / rxs;
+
+  return { x: p1.x + t * r.x, y: p1.y + t * r.y };
+}
+
 const nudgedCoords = (coords, cx, cy, amplitude) =>
   //push border points outwards by a given amplitude value to give the island a bit of padding
   coords.map(([x, y]) => {
@@ -74,6 +102,67 @@ const generateIslandClipPath = (hexTiles, radius, amplitude) => {
 };
 
 const Island = ({ gridWidth, gridHeight, hexTiles, radius, ports, idToVertexMap }) => {
+  ports.forEach((port, i) => {
+    const v = dockVector(port.angle);
+    console.log(`Port ${i}: pair ${port.pairId} angle=${port.angle}, vector=(${v.x}, ${v.y})`);
+  });
+  //group all ports into pairs (for sign placement)
+  const pairs = ports.reduce((accumulator, port) => {
+    (accumulator[port.pairId] ??= []).push(port);
+    return accumulator;
+  }, {});
+
+  const dockIntersectionMarkers = Object.entries(pairs).flatMap(([pid, list]) => {
+    //get the dock intersection points to place the signs
+    if (list.length !== 2) return [];
+
+    //get the port objects and their coordinates
+    const [port1, port2] = list;
+    const coordinates1 = idToVertexMap.get(port1.vertex);
+    const coordinates2 = idToVertexMap.get(port2.vertex);
+    if (!coordinates1 || !coordinates2) return [];
+
+    const port1pt = { x: coordinates1[0], y: coordinates1[1] };
+    const port2pt = { x: coordinates2[0], y: coordinates2[1] };
+
+    //get the intersection between the two ports
+    const hit = rayIntersection(port1pt, port1.angle, port2pt, port2.angle);
+    if (!hit) return [];
+
+    //calculate the midpoint between the two ports
+    const midpoint = {
+      x: (port1pt.x + port2pt.x) / 2,
+      y: (port1pt.y + port2pt.y) / 2,
+    };
+
+    //offset the sign slightly since since they are all located slightly differently relative to the island
+    //offset is anywhere between the intersection and midpoint
+    const offsetFactor = port1.offset;
+    const adjustedHit = {
+      x: hit.x * (1 - offsetFactor) + midpoint.x * offsetFactor,
+      y: hit.y * (1 - offsetFactor) + midpoint.y * offsetFactor,
+    };
+
+    const imgSrc = port1.type === "twoForOne" && port1.resource ? `/images/signs/${port1.resource}-sign.png` : "/images/signs/generic-sign.png";
+
+    return (
+      <img
+        key={`pair-${pid}`}
+        src={imgSrc}
+        alt={`intersection ${pid}`}
+        style={{
+          position: "absolute",
+          left: adjustedHit.x - radius / 2,
+          top: adjustedHit.y - radius / 2,
+          width: radius / 1.5,
+          height: radius / 1.5,
+          pointerEvents: "none",
+          zIndex: 5,
+        }}
+      />
+    );
+  });
+
   const baseAmplitude = 0.2;
   const islandClipPath = useMemo(() => generateIslandClipPath(hexTiles, radius, radius * baseAmplitude), [hexTiles, radius]);
   const ripples = useMemo(() => {
@@ -103,7 +192,7 @@ const Island = ({ gridWidth, gridHeight, hexTiles, radius, ports, idToVertexMap 
   }, [hexTiles, radius, gridWidth, gridHeight]);
 
   return (
-    <div style={{ position: "relative", zIndex: -1 }}>
+    <div style={{ position: "relative", zIndex: 0 }}>
       <div style={{ position: "absolute", width: gridWidth, height: gridHeight, clipPath: islandClipPath, WebkitClipPath: islandClipPath, backgroundColor: "moccasin", zIndex: 3 }} />
       {ripples}
       {ports.map((port, i) => {
@@ -113,8 +202,8 @@ const Island = ({ gridWidth, gridHeight, hexTiles, radius, ports, idToVertexMap 
         const [x, y] = coord;
         const angle = port.angle;
 
-        const dockWidth = radius * 0.25;
-        const dockHeight = radius * 0.5;
+        const dockWidth = radius * 0.5;
+        const dockHeight = radius * 0.25;
 
         return (
           <img
@@ -135,6 +224,8 @@ const Island = ({ gridWidth, gridHeight, hexTiles, radius, ports, idToVertexMap 
           />
         );
       })}
+
+      {dockIntersectionMarkers}
     </div>
   );
 };
