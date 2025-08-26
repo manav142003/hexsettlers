@@ -246,6 +246,7 @@ function createGameState(room) {
           settlements: [], //player's settlements
           cities: [], //player's cities
           victoryPoints: 0, //player's victory points
+          hiddenVictoryPoints: 0, //player's victory points from development cards
           longestRoadCount: 0, //the size of the player's longest road
           armyCount: 0, //the size of the player's largest army
           statDifferences: { wood: 0, brick: 0, wheat: 0, ore: 0, sheep: 0, victoryPoints: 0, devCardCount: 0, armyCount: 0, longestRoadCount: 0, resourceCount: 0 },
@@ -302,6 +303,7 @@ function getClientGameState(gameState, uuid) {
         ? {
             resources: player.resources,
             devCards: player.devCards,
+            hiddenVictoryPoints: player.hiddenVictoryPoints,
           }
         : {
             resourceCount: Object.values(player.resources).reduce((a, b) => a + b, 0),
@@ -556,18 +558,20 @@ function steal(data, uuid) {
 
   //get the victim and their resources (if they dont exist or they have no resources, return)
   const { player: victim } = getContext(victimId);
-  if (!victim) return;
-  const available = Object.entries(victim.resources).filter(([_, amt]) => amt > 0);
-  if (!available.length) return;
 
-  //remove the resource from the victim's hand, add it to the stealer's hand
-  const [resource] = available[Math.floor(Math.random() * available.length)];
-  applyResourceChanges(null, victim, { [resource]: -1 });
-  applyResourceChanges(null, player, { [resource]: +1 });
+  if (victim) {
+    const available = Object.entries(victim.resources).filter(([_, amt]) => amt > 0);
+    if (!available.length) return;
 
-  //update game state and send player what they stole
-  broadcastToRoom(pin, { type: "logMessage", message: `${player.username} stole a resource from ${victim.username}`, uuid });
-  broadcastToPlayer(uuid, { type: "stealResult", resource });
+    //remove the resource from the victim's hand, add it to the stealer's hand
+    const [resource] = available[Math.floor(Math.random() * available.length)];
+    applyResourceChanges(null, victim, { [resource]: -1 });
+    applyResourceChanges(null, player, { [resource]: +1 });
+
+    //update game state and send player what they stole
+    broadcastToRoom(pin, { type: "logMessage", message: `${player.username} stole a resource from ${victim.username}`, uuid });
+    broadcastToPlayer(uuid, { type: "stealResult", resource });
+  }
 
   //delete robber phase, and prompt player for their next action
   delete gameState.robber;
@@ -587,14 +591,14 @@ function purchaseDevCard(data, uuid) {
   applyResourceChanges(gameState.bank, player, { wheat: -1, ore: -1, sheep: -1 });
   const index = Math.floor(Math.random() * gameState.devCards.length);
   const [cardType] = gameState.devCards.splice(index, 1);
+
+  //create dev card object
   const devCard = { type: cardType, locked: true, played: false };
 
-  //victory point cards get played immediately. If the card is something else, add to the player's deck
-  if (cardType !== "Victory Point") {
-    player.unplayedDevCards = (player.unplayedDevCards || 0) + 1;
-    player.devCards.push(devCard);
-    player.statDifferences.devCardCount = (player.statDifferences.devCardCount || 0) + 1;
-  }
+  //add the dev card to the player's deck
+  player.unplayedDevCards = (player.unplayedDevCards || 0) + 1;
+  player.devCards.push(devCard);
+  player.statDifferences.devCardCount = (player.statDifferences.devCardCount || 0) + 1;
 
   //let players know that a dev card was purchased, let the current player know the type of dev card they got.
   for (const playerId in gameState.players) {
@@ -746,6 +750,7 @@ function yearOfPlenty(data, uuid) {
 
   broadcastToRoom(pin, { type: "logMessage", message: `${player.username} called year of plenty, gained ${resourceString}`, uuid });
   broadcastGameState(gameState);
+  nextAction(uuid);
 }
 
 function updateVictoryPoints(uuid) {
@@ -755,23 +760,25 @@ function updateVictoryPoints(uuid) {
   const prev = player.victoryPoints || 0;
 
   let points = 0;
+  let hiddenPoints = 0;
 
   //1 point per settlement, 2 points per city, 1 point per victory point dev card
   points += player.settlements.length;
   points += player.cities.length * 2;
-  points += player.devCards.filter((card) => card.type === "Victory Point").length;
+  hiddenPoints += player.devCards.filter((card) => card.type === "Victory Point").length;
 
   //2 points for largest army or longest road
   gameState.largestArmy = determineLargestArmy(uuid);
   gameState.longestRoad = determineLongestRoad(uuid);
-  if (gameState.longestRoad === uuid) points += 2;
-  if (gameState.largestArmy === uuid) points += 2;
+  if (gameState.longestRoad?.playerId === uuid) points += 2;
+  if (gameState.largestArmy?.playerId === uuid) points += 2;
 
   //calculate the difference in victory points
   const difference = points - prev;
   player.statDifferences.victoryPoints = (player.statDifferences.victoryPoints || 0) + difference;
 
   player.victoryPoints = points;
+  player.hiddenVictoryPoints = hiddenPoints;
 }
 
 function nextAction(uuid) {
@@ -832,7 +839,7 @@ function calculateStats(gameState, pin) {
     //update army count and victory points, end game if necessary
     player.armyCount = player.devCards.filter((card) => card.type === "Knight" && card.played).length;
     updateVictoryPoints(playerId);
-    if (player.victoryPoints >= 10) endGame(playerId);
+    if (player.victoryPoints + player.hiddenVictoryPoints >= 10) endGame(playerId);
   }
   sendStatDifferences(gameState, pin);
 }
@@ -935,26 +942,30 @@ function determineLargestArmy(uuid) {
     const armySize = player.devCards.filter((card) => card.type === "Knight" && card.played).length;
     if (armySize > largestArmy) {
       largestArmy = armySize;
-      potentialHolder = player;
+      potentialHolder = { playerId, player };
     }
   }
 
   //the largest army must be of size 3 at least to qualify
   if (largestArmy < 3) return null;
 
-  //largest army gets overtaken by another player
-  if (gameState.largestArmy && gameState.largestArmy !== potentialHolder) {
-    broadcastToRoom(pin, { type: "logMessage", message: `${gameState.largestArmy.username} lost largest army`, uuid });
-  }
-
-  //largest army gets acquired by a player (whether overtaken or not)
-  if (gameState.largestArmy !== potentialHolder) {
-    broadcastToRoom(pin, { type: "logMessage", message: `${potentialHolder.username} gained largest army`, uuid });
+  //if no largest army yet, assign to potentialHolder
+  if (!gameState.largestArmy) {
+    broadcastToRoom(pin, { type: "logMessage", message: `${potentialHolder.player.username} gained largest army`, uuid });
     return potentialHolder;
   }
 
-  //current holder remains if they do not get overtaken
-  return gameState.largestArmy;
+  //only overtake if strictly larger than the current holder’s army size
+  const currentHolder = gameState.largestArmy;
+  const currentSize = currentHolder.player.devCards.filter((card) => card.type === "Knight" && card.played).length;
+  if (largestArmy > currentSize && potentialHolder.playerId !== currentHolder.playerId) {
+    broadcastToRoom(pin, { type: "logMessage", message: `${currentHolder.player.username} lost largest army`, uuid });
+    broadcastToRoom(pin, { type: "logMessage", message: `${potentialHolder.player.username} gained largest army`, uuid });
+    return potentialHolder;
+  }
+
+  //holder keeps it on ties or if they’re still the largest
+  return currentHolder;
 }
 
 function getContext(uuid) {
@@ -1015,6 +1026,10 @@ function getPossibleActions(uuid) {
       actions.buyDevCard = { allowed: true, description: "Purchase a development card" };
     } else actions.buyDevCard = { allowed: false, description: "Insufficient resources" };
   } else actions.buyDevCard = { allowed: false, description: "No development cards remaining in deck" };
+
+  //check if player can play a development card
+  const hasPlayableDevCard = player.devCards.some((card) => card.type !== "Victory Point" && !card.locked && !card.played);
+  actions.playDevCard = hasPlayableDevCard ? { allowed: true, description: "Play a development card" } : { allowed: false, description: "No playable development cards" };
 
   //check if player can trade (as long as the player has at least one resource, they can trade it)
   const hasResources = Object.values(player.resources).some((amount) => amount > 0);
@@ -1321,7 +1336,7 @@ function determineLongestRoad(uuid) {
     //if the player's length is longer than the current found longest road, set that player to the sole potential holder
     if (length > longestRoad) {
       longestRoad = length;
-      potentialHolder = player;
+      potentialHolder = { playerId, player };
       tie = false;
       //if another player ties with the holder, mark the tie flag as true
     } else if (length === longestRoad && longestRoad >= 5) tie = true;
@@ -1330,17 +1345,17 @@ function determineLongestRoad(uuid) {
   //if the longest road is under 5, nobody gets longest road
   if (longestRoad < 5) {
     //if there WAS a previous longest road but not anymore, we must remove them as longest road and return null
-    if (gameState.longestRoad) broadcastToRoom(pin, { type: "logMessage", message: `${gameState.longestRoad.username} lost longest road`, uuid });
+    if (gameState.longestRoad) broadcastToRoom(pin, { type: "logMessage", message: `${gameState.longestRoad.player.username} lost longest road`, uuid });
     return null;
   }
 
   //if tied, then the current longest road holder remains
-  if (tie) return gameState.longestRoad;
+  if (tie) return gameState.longestRoad ?? null;
 
   //if we have a new longest road holder, return that player
-  if (potentialHolder !== gameState.longestRoad) {
-    if (gameState.longestRoad) broadcastToRoom(pin, { type: "logMessage", message: `${gameState.longestRoad.username} lost longest road`, uuid });
-    broadcastToRoom(pin, { type: "logMessage", message: `${potentialHolder.username} got longest road`, uuid });
+  if (!gameState.longestRoad || potentialHolder.playerId !== gameState.longestRoad.playerId) {
+    if (gameState.longestRoad) broadcastToRoom(pin, { type: "logMessage", message: `${gameState.longestRoad.player.username} lost longest road`, uuid });
+    broadcastToRoom(pin, { type: "logMessage", message: `${potentialHolder.player.username} got longest road`, uuid });
   }
   return potentialHolder;
 }

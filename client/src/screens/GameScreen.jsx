@@ -129,7 +129,7 @@ export default function GameScreen({ setMenu, setScreen }) {
             </div>
 
             <div className="xl:flex xl:flex-1 xl:order-first">
-              <ActionMenu isYourTurn={isYourTurn} action={gameState.action} phase={gameState.phase} devCards={gameState.players[id].devCards} resources={gameState.players[id].resources} />
+              <ActionMenu isYourTurn={isYourTurn} action={gameState.action} phase={gameState.phase} devCards={gameState.players[id].devCards} resources={gameState.players[id].resources} bank={gameState.bank} />
             </div>
           </div>
 

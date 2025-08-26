@@ -102,10 +102,6 @@ const generateIslandClipPath = (hexTiles, radius, amplitude) => {
 };
 
 const Island = ({ gridWidth, gridHeight, hexTiles, radius, ports, idToVertexMap }) => {
-  ports.forEach((port, i) => {
-    const v = dockVector(port.angle);
-    console.log(`Port ${i}: pair ${port.pairId} angle=${port.angle}, vector=(${v.x}, ${v.y})`);
-  });
   //group all ports into pairs (for sign placement)
   const pairs = ports.reduce((accumulator, port) => {
     (accumulator[port.pairId] ??= []).push(port);

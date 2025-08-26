@@ -13,6 +13,11 @@ const StealMenu = ({ stealData, onComplete }) => {
 
   const { victims } = stealData;
 
+  const handleSkip = () => {
+    send({ type: "steal", victimId: null });
+    onComplete();
+  };
+
   return (
     <div className="modal">
       <div className="overlay"></div>
@@ -28,7 +33,7 @@ const StealMenu = ({ stealData, onComplete }) => {
                 {victim.username}
               </button>
             ))}
-            <button className={`${hoverClass} mt-2`} onClick={onComplete}>
+            <button className={`${hoverClass} mt-2`} onClick={handleSkip}>
               Skip Steal
             </button>
           </div>

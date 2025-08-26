@@ -36,7 +36,7 @@ function YourStatsDisplay({ player, resources, playerId }) {
     <div>
       <div className="grid grid-cols-3 gap-3 items-center lg:grid-cols-1 xl:grid-cols-3">
         <h3 className={`px-5 text-2xl font-bold col-span-2 md:col-span-1 md:col-start-2 md:text-center lg:col-start-1 lg:col-span-2 ${textColourMap[playerColour]}`}>{player.username}</h3>
-        <VictoryPointDisplay victoryPoints={player.victoryPoints} playerId={playerId} />
+        <VictoryPointDisplay hiddenPoints={player.hiddenVictoryPoints} victoryPoints={player.victoryPoints} playerId={playerId} />
       </div>
 
       <ResourceDisplay resources={resources} playerId={playerId} />
@@ -49,7 +49,7 @@ function YourStatsDisplay({ player, resources, playerId }) {
   );
 }
 
-function VictoryPointDisplay({ victoryPoints, playerId }) {
+function VictoryPointDisplay({ hiddenPoints = null, victoryPoints, playerId }) {
   const { differences } = useDifferences();
   const diff = differences?.differences?.[playerId]?.victoryPoints;
   const eventId = differences?.eventId;
@@ -57,7 +57,10 @@ function VictoryPointDisplay({ victoryPoints, playerId }) {
     <div className="flex items-center justify-end gap-2 px-5 lg:justify-center">
       <img src={`/icons/crown.png`} className=" lg:object-contain w-10 h-10 lg:w-20 lg:h-20" />
       <StatGainFloat amount={diff} triggerKey={eventId} />
-      <h3 className={`text-2xl font-bold ${textColourMap[playerColour]}`}>{victoryPoints}</h3>
+      <h3 className={`text-md lg:text-2xl font-bold ${textColourMap[playerColour]}`}>
+        {victoryPoints}
+        {hiddenPoints && hiddenPoints > 0 ? ` (+${hiddenPoints})` : ""}
+      </h3>
     </div>
   );
 }

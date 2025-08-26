@@ -6,7 +6,7 @@ import { playerColourMap } from "../context/PlayerColourContext";
 import { resources } from "../utils/resources";
 import { hoverTextMap, colourHexMap } from "../utils/colours";
 
-const BankMenu = ({ onComplete, options }) => {
+const BankMenu = ({ onComplete, options, bank }) => {
   const { send, id } = useSocket();
   const playerColour = playerColourMap()[id];
   const hoverClass = hoverTextMap[playerColour];
@@ -47,10 +47,13 @@ const BankMenu = ({ onComplete, options }) => {
           <h4 className="text-xl font-semibold mt-6 mb-2">Receive:</h4>
           <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
             {resources.map((resource) => (
-              <button key={resource} onClick={() => setSelectedReceive(resource)} style={selectedReceive === resource ? { border: `2px solid ${borderColour}` } : {}}>
-                <img className="w-16 h-16" src={`/icons/${resource}.png`} alt={`${resource} icon`} />
-                <p className="text-sm">x1</p>
-              </button>
+              <div>
+                <button key={resource} onClick={() => setSelectedReceive(resource)} style={selectedReceive === resource ? { border: `2px solid ${borderColour}` } : {}}>
+                  <img className="w-16 h-16" src={`/icons/${resource}.png`} alt={`${resource} icon`} />
+                  <p className="text-sm">x1</p>
+                </button>
+                <p className="font-semibold text-center">x{bank[resource]}</p>
+              </div>
             ))}
           </div>
         </div>

@@ -9,8 +9,8 @@ const YearOfPlentyMenu = ({ onComplete }) => {
     if (selected.length < 2) setSelected([...selected, resource]);
   };
 
-  const removeResource = (index) => {
-    setSelected(selected.filter((_, i) => i != index));
+  const undoSelection = () => {
+    setSelected([]);
   };
 
   const confirmSelection = () => {
@@ -21,33 +21,34 @@ const YearOfPlentyMenu = ({ onComplete }) => {
   };
 
   const resources = ["wood", "brick", "sheep", "wheat", "ore"];
+
   return (
     <div className="modal">
       <div className="overlay"></div>
       <div className="modal-content">
-        <h3>Year of Plenty</h3>
-        <p>Select two resources!</p>
+        <h2 className="text-center p-4 text-2xl font-bold">Year of Plenty</h2>
+        <p className="text-center pb-5">Select two free resources!</p>
 
-        <div>
-          {resources.map((res) => (
-            <button key={res} onClick={() => selectResource(res)} disabled={selected.length >= 2}>
-              {res}
-            </button>
-          ))}
+        <div className="flex flex-col xl:flex-row items-center justify-center gap-4 p-5">
+          {resources.map((res) => {
+            const count = selected.filter((r) => r === res).length;
+            return (
+              <button key={res} onClick={() => selectResource(res)} className="flex flex-col items-center">
+                <img className="w-20 h-20" src={`/icons/${res}.png`} alt={res} />
+                {count > 0 && <p className="text-sm font-semibold">x{count}</p>}
+              </button>
+            );
+          })}
         </div>
 
-        <div>
-          {selected.map((res, index) => (
-            <div key={index} className="selected-item">
-              {res}
-              <button onClick={() => removeResource(index)}>❌</button>
-            </div>
-          ))}
+        <div className="flex justify-center gap-4 mt-6">
+          <button onClick={undoSelection} disabled={selected.length === 0} className="px-4 py-2 border rounded disabled:opacity-50">
+            Undo Selection
+          </button>
+          <button onClick={confirmSelection} disabled={selected.length !== 2} className="px-4 py-2 border rounded disabled:opacity-50">
+            Confirm
+          </button>
         </div>
-
-        <button onClick={confirmSelection} disabled={selected.length !== 2}>
-          Confirm
-        </button>
       </div>
     </div>
   );

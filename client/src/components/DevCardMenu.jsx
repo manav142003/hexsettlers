@@ -28,7 +28,7 @@ const DevCardMenu = ({ onComplete, devCards, devCardActions }) => {
   const hasPlayableDevCard = (devCards) => {
     if (!devCards) return false;
     return devCards.some((card) => {
-      return !card.locked && !card.played;
+      return card.type !== "Victory Point" && !card.locked && !card.played;
     });
   };
 
@@ -43,7 +43,7 @@ const DevCardMenu = ({ onComplete, devCards, devCardActions }) => {
             <button title={devCardActions.description} className={hoverClass} disabled={!devCardActions?.allowed} onClick={() => purchaseCard()}>
               Purchase Card
             </button>
-            <button disabled={!hasPlayableDevCard(devCards)} onClick={() => setMenu("devCards")}>
+            <button disabled={!hasPlayableDevCard(devCards)} className={hoverClass} onClick={() => setMenu("devCards")}>
               Play Card
             </button>
 
@@ -53,11 +53,14 @@ const DevCardMenu = ({ onComplete, devCards, devCardActions }) => {
           </div>
         ) : (
           <div>
-            {devCards.map((card, i) => (
-              <button className={hoverClass} key={i} onClick={() => playCard(card, i)} disabled={card.locked || card.played}>
-                {card.type}
-              </button>
-            ))}
+            {devCards
+              .filter((card) => card.type !== "Victory Point")
+              .map((card, i) => (
+                <button className={hoverClass} key={i} onClick={() => playCard(card, i)} disabled={card.locked || card.played}>
+                  {card.type}
+                </button>
+              ))}
+
             <button className={hoverClass} onClick={() => setMenu("main")}>
               Back
             </button>

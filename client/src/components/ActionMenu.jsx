@@ -9,7 +9,7 @@ import DiceModal from "./DiceModal";
 import BankMenu from "./BankMenu";
 import DevCardMenu from "./DevCardMenu";
 
-const ActionMenu = ({ isYourTurn, action, phase, devCards, resources }) => {
+const ActionMenu = ({ isYourTurn, action, phase, devCards, resources, bank }) => {
   const { send, subscribe, id } = useSocket();
   const [actions, setActions] = useState({});
   const [menuMode, setMenuMode] = useState("mainMenu");
@@ -45,7 +45,7 @@ const ActionMenu = ({ isYourTurn, action, phase, devCards, resources }) => {
           <ActionMenuButton title={actions.placeSettlement?.description} icon={faHouse} disabled={isDisabled("placeSettlement")} onClick={() => send({ type: "promptSettlementPlacement" })} />
           <ActionMenuButton title={actions.placeRoad?.description} icon={faRoad} disabled={isDisabled("placeRoad")} onClick={() => send({ type: "promptRoadPlacement" })} />
           <ActionMenuButton title={actions.placeCity?.description} icon={faCity} disabled={isDisabled("placeCity")} onClick={() => send({ type: "promptCityPlacement" })} />
-          <ActionMenuButton title={"Play or purchase a development card"} icon={faRectangleList} disabled={!(isYourTurn && action !== "roll" && action !== "robber")} onClick={() => setDevCardMenu(true)} />
+          <ActionMenuButton title={"Play or purchase a development card"} icon={faRectangleList} disabled={isDisabled("playDevCard") && isDisabled("buyDevCard")} onClick={() => setDevCardMenu(true)} />
           <ActionMenuButton title={actions.trade?.description} icon={faArrowRightArrowLeft} disabled={isDisabled("trade")} onClick={() => setTradeMenu(true)} />
           <ActionMenuButton title={actions.bank?.description} icon={faBuildingColumns} disabled={isDisabled("bank")} onClick={() => setBankMenu(true)} />
           <ActionMenuButton title={"End your turn"} icon={faForwardStep} disabled={!(isYourTurn && action !== "roll" && action !== "robber") || phase === "setup"} onClick={handleEndTurn} />
@@ -55,7 +55,7 @@ const ActionMenu = ({ isYourTurn, action, phase, devCards, resources }) => {
 
       <ServerLog enabled={menuMode === "messages"} onBack={() => setMenuMode("mainMenu")} />
       {devCardMenu && <DevCardMenu onComplete={() => setDevCardMenu(false)} devCards={devCards} devCardActions={actions.buyDevCard} />}
-      {bankMenu && <BankMenu onComplete={() => setBankMenu(false)} options={actions.bank.options} />}
+      {bankMenu && <BankMenu onComplete={() => setBankMenu(false)} options={actions.bank.options} bank={bank} />}
       {tradeMenu && <TradeMenu mode="propose" playerResources={resources} onComplete={() => setTradeMenu(false)} />}
       {diceMenu && isYourTurn && <DiceModal onComplete={() => setDiceMenu(false)} />}
     </div>
