@@ -3,14 +3,15 @@ const { WebSocketServer } = require("ws"); //websocket library
 const url = require("url"); //used to parse URL and extract query parameters
 const uuidv4 = require("uuid").v4; //used to create unique IDs for connected clients
 const { leaveRoom } = require("./lobby");
+//connections stores active WebSocket connections by UUID, users stores user metadata by UUID
+const { connections, users, playerToRoom, rooms } = require("./store");
 
 //create base HTTP server with WebSocket server layered on top
 const server = http.createServer();
 const wsServer = new WebSocketServer({ server });
-const port = 8000;
+const PORT = process.env.PORT || 8000;
+const HOST = "0.0.0.0";
 
-//connections stores active WebSocket connections by UUID, users stores user metadata by UUID
-const { connections, users, playerToRoom, rooms } = require("./store");
 const messageHandlers = {
   ...require("./lobby"),
   ...require("./broadcast"),
@@ -73,6 +74,6 @@ wsServer.on("connection", (connection, request) => {
 });
 
 //start the server on the specified port
-server.listen(port, () => {
-  console.log(`Hex Settlers server is running on port ${port}.`);
+server.listen(PORT, HOST, () => {
+  console.log(`Hex Settlers server is running on ${HOST}:${PORT}`);
 });
