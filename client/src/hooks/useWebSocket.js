@@ -8,7 +8,7 @@ export default function useWebSocket() {
 
   const connect = useCallback((username) => {
     if (socketRef.current && socketRef.current.readyState <= 1) return;
-    const ws = new WebSocket(`ws://localhost:8000?username=${username}`);
+    const ws = new WebSocket(`wss://hex-settlers-server.onrender.com?username=${username}`);
     socketRef.current = ws;
 
     ws.onopen = () => {
