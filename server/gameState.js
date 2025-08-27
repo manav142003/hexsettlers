@@ -219,7 +219,7 @@ const tileToVertices = {
 function createGameState(room) {
   const turnOrder = shuffle([...room.players]);
   return {
-    gameStarted: false, //indicates whether or not the game has started
+    readyPlayers: new Set(),
     turn: 0, //specifies whose turn it currently is (each player has an id of 0, 1, 2, or 3)
     turnOrder, //order in which players take turns (randomized)
     placementStep: 0, //helps track whose turn it is to place their initial settlements
@@ -266,15 +266,16 @@ function initializeGame(data, uuid) {
 function getGameState(data, uuid) {
   //this method is called once the game is initialized, to get the game state onto the client side.
   const { gameState } = getContext(uuid);
-
   broadcastGameState(gameState);
+}
 
-  //after the game state is sent for the first time, we also must prompt player 1 to place their first settlement.
-  if (!gameState.gameStarted) {
-    gameState.gameStarted = true;
-    setTimeout(() => {
-      promptSettlementPlacement(gameState, gameState.turnOrder[0]);
-    });
+function playerReady(data, uuid) {
+  //fires when the game state loads for a player. once all players load in, player 1 will be prompted to move
+  const { gameState } = getContext(uuid);
+  gameState.readyPlayers.add(uuid);
+
+  if (gameState.readyPlayers.size === gameState.turnOrder.length) {
+    promptSettlementPlacement(gameState, gameState.turnOrder[0]);
   }
 }
 
@@ -1503,6 +1504,7 @@ function cancelTrade(data, uuid) {
 
 module.exports = {
   initializeGame,
+  playerReady,
   getGameState,
   nextTurn,
   rollDice,

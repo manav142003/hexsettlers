@@ -83,6 +83,8 @@ export default function GameScreen({ setMenu, setScreen }) {
       setScreen("home");
     });
 
+    send({ type: "playerReady" });
+
     return () => {
       unsubGetGameState();
       unsubDiscardPrompt();

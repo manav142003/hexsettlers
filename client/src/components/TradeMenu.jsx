@@ -72,7 +72,7 @@ const TradeMenu = ({ mode, tradeData, playerResources, onComplete }) => {
       <div>
         <h4 className="text-center font-bold">{label}</h4>
         {resources.map((resource) => (
-          <div key={resource} className="flex items-center gap-2 mb-3">
+          <div key={resource} className="flex items-center justify-center gap-2 mb-3">
             <img className="w-20 h-20" src={`/icons/${resource}.png`} alt={`${resource} icon`} />
             <span>{state[resource] || 0}</span>
             <button className={hoverClass} onClick={() => increment(state, setState, resource)}>
@@ -92,7 +92,7 @@ const TradeMenu = ({ mode, tradeData, playerResources, onComplete }) => {
       <div>
         <h4 className="text-center font-bold">Offer</h4>
         {Object.entries(playerResources).map(([resource, count]) => (
-          <div key={resource} className="flex items-center gap-2 mb-3">
+          <div key={resource} className="flex items-center justify-center gap-2 mb-3">
             <img className="w-20 h-20" src={`/icons/${resource}.png`} alt={`${resource} icon`} />
             <span>{offer[resource] || 0}</span>
             <button className={hoverClass} onClick={() => increment(offer, setOffer, resource)} disabled={(offer[resource] || 0) >= count}>

@@ -26,8 +26,8 @@ export default function SettlementButton({ radius, coords, settlementId, disable
   };
 
   const buttonStyle = {
-    width: "10px",
-    height: "10px",
+    width: `${radius / 2.5}px`,
+    height: `${radius / 2.5}px`,
     borderRadius: "50%",
     border: "2px solid lightgrey",
     background: colour,
@@ -37,7 +37,7 @@ export default function SettlementButton({ radius, coords, settlementId, disable
 
   if (!disabled) {
     //if the button is enabled, return the button to place the settlement/city
-    return <button className={`animate-pulse ${hoverClass}`} style={{ ...style, ...buttonStyle }} onClick={() => handlePlacement(settlementId)} disabled={disabled}></button>;
+    return <div className={`animate-pulse ${hoverClass}`} style={{ ...style, ...buttonStyle }} onClick={() => handlePlacement(settlementId)} disabled={disabled}></div>;
   } else if (owner !== -1) {
     //if the vertex has an owner, determine the type of structure and put that icon here
     const icon = structureType === "city" ? faCity : faHouse;
