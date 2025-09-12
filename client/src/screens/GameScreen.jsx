@@ -29,13 +29,19 @@ export default function GameScreen({ setMenu, setScreen }) {
   const [winnerData, setWinnerData] = useState(null);
   const [gameAborted, setGameAborted] = useState(null);
   const [abortedBy, setAbortedBy] = useState(null);
+  const sentReadyRef = useRef(false);
 
   useEffect(() => send({ type: "getGameState" }), [send]); //request the game state from the server
-  useEffect(() => send({ type: "playerReady" }), [send]);
 
   useEffect(() => {
     const unsubGetGameState = subscribe("getGameState", (data) => {
       setGameState(data.gameState); //update the game's state
+
+      //at the beginning of the game, send message to server indicating that the player has received the game state and is ready to play
+      if (!sentReadyRef.current) {
+        send({ type: "playerReady" });
+        sentReadyRef.current = true;
+      }
     });
 
     const unsubDiscardPrompt = subscribe("discardPrompt", (data) => {
