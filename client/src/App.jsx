@@ -6,7 +6,9 @@ import "./components/Modal.css";
 import DisclaimerModal from "./components/DisclaimerModal";
 import Connect from "./screens/Connect";
 import { useSocket } from "./context/WebSocketContext";
+import LostConnectionModal from "./components/LostConnectionModal";
 function App() {
+  const { isConnected } = useSocket();
   const [screen, setScreen] = useState("home");
   const [username, setUsername] = useState("");
   const [roomPIN, setRoomPIN] = useState(null);
@@ -40,13 +42,9 @@ function App() {
       )}
 
       {screen === "game" && <GameScreen setMenu={setMenu} setScreen={setScreen} />}
+
+      {!isConnected && menu !== "connect" && <LostConnectionModal setMenu={setMenu} setScreen={setScreen} />}
     </div>
-    // <>
-    //   {screen === "home" && <Home username={username} setUsername={setUsername} setScreen={setScreen} roomPIN={roomPIN} setRoomPIN={setRoomPIN} setPlayers={setPlayers} setHost={setHost} />}
-    //   {screen === "join" && <JoinRoom username={username} setRoomPIN={setRoomPIN} setPlayers={setPlayers} setScreen={setScreen} setHost={setHost} />}
-    //   {screen === "lobby" && <Lobby roomPIN={roomPIN} players={players} setPlayers={setPlayers} setScreen={setScreen} host={host} />}
-    //   {screen === "game" && <GameScreen players={players} />}
-    // </>
   );
 }
 

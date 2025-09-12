@@ -275,7 +275,7 @@ function playerReady(data, uuid) {
   gameState.readyPlayers.add(uuid);
 
   if (gameState.readyPlayers.size === gameState.turnOrder.length) {
-    promptSettlementPlacement(gameState, gameState.turnOrder[0]);
+    promptSettlementPlacement(null, gameState.turnOrder[gameState.turn]);
   }
 }
 

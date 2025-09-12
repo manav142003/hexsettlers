@@ -30,7 +30,8 @@ export default function GameScreen({ setMenu, setScreen }) {
   const [gameAborted, setGameAborted] = useState(null);
   const [abortedBy, setAbortedBy] = useState(null);
 
-  useEffect(() => send({ type: "getGameState" }), []); //request the game state from the server
+  useEffect(() => send({ type: "getGameState" }), [send]); //request the game state from the server
+  useEffect(() => send({ type: "playerReady" }), [send]);
 
   useEffect(() => {
     const unsubGetGameState = subscribe("getGameState", (data) => {
@@ -82,8 +83,6 @@ export default function GameScreen({ setMenu, setScreen }) {
       setMenu("lobby");
       setScreen("home");
     });
-
-    send({ type: "playerReady" });
 
     return () => {
       unsubGetGameState();

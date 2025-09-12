@@ -38,6 +38,7 @@ export default function useWebSocket() {
 
     ws.onclose = () => {
       console.log(`${username} disconnected - WebSocket closed.`);
+      setIsConnected(false);
     };
   }, []);
 
