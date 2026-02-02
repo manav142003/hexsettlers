@@ -31,11 +31,25 @@ export default function Connect({ setUsername, setMenu }) {
 
   return (
     <div className="flex flex-col items-center gap-4 mt-6">
-      <input className="border border-gray-500 rounded-xl px-6 py-3 text-lg w-72" type="text" placeholder="enter your name" value={input} onChange={(e) => setInput(e.target.value)} />
+      <input
+        className="border border-gray-500 rounded-xl px-6 py-3 text-lg w-72"
+        type="text"
+        placeholder="enter your name"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+      />
       {error !== "" && <p className="text-red-500">{error}</p>}
-      <button className="px-6 py-3 rounded-xl w-72" onClick={handleConnect} disabled={!input.trim()}>
+      <button
+        className="px-6 py-3 rounded-xl w-72"
+        onClick={handleConnect}
+        disabled={!input.trim()}>
         CONNECT
       </button>
+      <h4>Having Trouble Connecting?</h4>
+      <p className="px-5 max-w-md text-center">
+        The server may be waking up (free hosting things :)) Please wait ~60
+        seconds and try again!
+      </p>
     </div>
   );
 }
