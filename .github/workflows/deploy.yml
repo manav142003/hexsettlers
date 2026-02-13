@@ -1,0 +1,33 @@
+name: frontend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: AWS
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            git config --global --add safe.directory /home/ubuntu/hexsettlers
+            cd /home/ubuntu/hexsettlers
+            git pull origin main
+            git checkout main
+            cd /home/ubuntu/hexsettlers/client
+            npm install
+            npm run build
+            cd /home/ubuntu/hexsettlers/server
+            npm install
+            pm2 start server.js --name=backend
