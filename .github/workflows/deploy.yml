@@ -28,6 +28,4 @@ jobs:
             cd /home/ubuntu/hexsettlers/client
             npm install
             npm run build
-            cd /home/ubuntu/hexsettlers/server
-            npm install
-            pm2 start server.js --name=backend
+            
